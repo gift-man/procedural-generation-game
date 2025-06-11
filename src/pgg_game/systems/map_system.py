@@ -14,6 +14,7 @@ except ImportError:
     print("pip install numpy>=1.24.0")
     sys.exit(1)
 
+from ..world.generators.province_settings import ProvinceGenerationConfig
 from ..world.province_manager import ProvinceManager
 from ..world.game_world import GameWorld
 from ..components.transform import TransformComponent
@@ -369,10 +370,15 @@ class MapSystem:
                             
     def generate_provinces(self) -> None:
         """Генерирует провинции на карте."""
+        # Создаем конфигурацию
+        config = ProvinceGenerationConfig()
+        
+        # Создаем менеджер провинций с конфигурацией
+        self.province_manager = ProvinceManager(config)
+        
         # Очищаем старые провинции
         self.provinces.clear()
         self.cell_to_province.clear()
-        self.province_manager = ProvinceManager()
         
         # Собираем все клетки суши
         land_cells = set()
@@ -381,40 +387,61 @@ class MapSystem:
                 if self.grid[y, x] == 1:
                     land_cells.add((x, y))
         
-        # Создаем провинции пока есть свободные клетки
+        # Основной цикл генерации провинций
         while land_cells:
+            # Определяем размер следующей провинции
+            target_size = self.province_manager.get_ideal_province_size()
+            
             # Создаем новую провинцию
-            province_id = self.province_manager.create_province()
-            province_cells = set()
+            province_id = self.province_manager.create_province(target_size)
             
-            # Выбираем начальную точку провинции
-            start = random.choice(list(land_cells))
-            province_cells.add(start)
-            land_cells.remove(start)
-            self.province_manager.add_cell_to_province(province_id, start)
+            # Выбираем стартовую точку с наибольшим количеством соседей
+            best_start = None
+            best_neighbor_count = -1
             
-            # Расширяем провинцию до нужного размера
-            while len(province_cells) < self.province_manager._min_province_size and land_cells:
+            for cell in land_cells:
+                x, y = cell
+                # Считаем только непосредственных соседей (без диагоналей)
+                neighbor_count = sum(1 for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]
+                                if (x + dx, y + dy) in land_cells)
+                
+                if neighbor_count > best_neighbor_count:
+                    best_neighbor_count = neighbor_count
+                    best_start = cell
+            
+            if best_start is None:
+                break
+                
+            # Добавляем стартовую клетку
+            if self.province_manager.add_cell_to_province(province_id, best_start):
+                land_cells.remove(best_start)
+            
+            # Расширяем провинцию до целевого размера
+            while (len(self.province_manager.provinces[province_id].cells) < target_size and 
+                land_cells):
                 candidates = []
-                # Находим все соседние клетки
+                province_cells = self.province_manager.provinces[province_id].cells
+                
+                # Собираем все возможные соседние клетки
                 for cell in province_cells:
                     x, y = cell
-                    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                    for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
                         neighbor = (x + dx, y + dy)
                         if neighbor in land_cells:
                             candidates.append(neighbor)
                 
                 if not candidates:
                     break
-                
-                # Выбираем случайную соседнюю клетку
+                    
+                # Выбираем случайную клетку из кандидатов
                 next_cell = random.choice(candidates)
-                province_cells.add(next_cell)
-                land_cells.remove(next_cell)
-                self.province_manager.add_cell_to_province(province_id, next_cell)
+                
+                # Пытаемся добавить клетку
+                if self.province_manager.add_cell_to_province(province_id, next_cell):
+                    land_cells.remove(next_cell)
         
         # Обновляем словари для отрисовки
-        self.provinces = self.province_manager.provinces
+        self.provinces = {pid: prov.cells for pid, prov in self.province_manager.provinces.items()}
         self.cell_to_province = self.province_manager.cell_to_province
 
 

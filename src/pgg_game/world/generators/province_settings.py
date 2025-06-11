@@ -1,36 +1,23 @@
 """Настройки генерации провинций."""
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Dict, Optional
 
 @dataclass
 class ProvinceGenerationConfig:
     """Конфигурация для генерации провинций."""
-    # Базовые ограничения
+    # Размеры провинций
     min_province_size: int = 4
-    max_province_size: int = 12
-    min_provinces: int = 8
-    max_provinces: int = 20
+    max_province_size: int = 8
     
-    # Параметры адаптивной генерации
-    optimal_size: int = 6
-    target_count: Optional[int] = None
+    # Вероятности размеров провинций (должны в сумме давать 1.0)
+    size_probabilities: Dict[int, float] = field(default_factory=lambda: {
+        4: 0.15,  # 15% шанс для провинций размером 4
+        5: 0.20,  # 20% шанс для провинций размером 5
+        6: 0.30,  # 30% шанс для провинций размером 6
+        7: 0.20,  # 20% шанс для провинций размером 7
+        8: 0.15   # 15% шанс для провинций размером 8
+    })
     
-    # Настройки размещения семян
-    min_seed_distance: int = 3
-    prefer_central_seeds: bool = True
-    seed_random_offset: float = 0.2
-    
-    # Параметры роста провинций
-    growth_balance: float = 0.7  # Баланс между компактностью и равномерностью роста
+    # Настройки генерации
     allow_diagonal_growth: bool = False  # Рост только по основным направлениям
-    
-    # Ограничения генерации
-    max_attempts: int = 1000
-    quality_threshold: float = 0.8  # Минимальное качество для принятия результата
-    
-    # Веса для оценки качества
-    weights = {
-        'compactness': 0.4,    # Насколько компактна форма провинции
-        'connectivity': 0.3,    # Насколько хорошо соединены клетки
-        'size_balance': 0.3,   # Насколько равномерно распределены размеры
-    }
+    check_plus_intersection: bool = True  # Проверка на плюсовые пересечения
