@@ -12,15 +12,17 @@ GRID_WIDTH = SCREEN_WIDTH // TILE_SIZE
 GRID_HEIGHT = SCREEN_HEIGHT // TILE_SIZE
 
 # Слои рендеринга (порядок отрисовки)
+# Слои рендеринга (порядок отрисовки)
 RENDER_LAYERS = {
-    'background': 0,
-    'terrain': 1,
-    'grid': 2,
-    'resources': 3,
-    'buildings': 4,
-    'units': 5,
-    'fx': 6,
-    'ui': 7
+    'background': 0,    # Фон
+    'terrain': 1,       # Местность (вода и суша)
+    'grid': 2,         # Сетка
+    'provinces': 3,    # Провинции
+    'resources': 4,    # Ресурсы
+    'buildings': 5,    # Здания
+    'units': 6,        # Юниты
+    'fx': 7,          # Эффекты
+    'ui': 8           # Интерфейс
 }
 
 COLORS = {

@@ -4,12 +4,13 @@ from ..components.province_info import ProvinceInfoComponent
 
 class ProvinceManager:
     """Управляет провинциями на карте."""
-    
+        
     def __init__(self):
         """Инициализация менеджера провинций."""
-        self.provinces: Dict[int, Set[Tuple[int, int]]] = {}  # Изменено: теперь храним просто множества клеток
+        self.provinces: Dict[int, Set[Tuple[int, int]]] = {}
         self.cell_to_province: Dict[Tuple[int, int], int] = {}
         self.next_province_id = 0
+        self._max_province_size = 12  # Максимальный размер провинции
         
     def create_province(self) -> int:
         """

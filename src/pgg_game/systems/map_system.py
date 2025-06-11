@@ -22,7 +22,8 @@ from ..components.province_info import ProvinceInfoComponent
 from ..components.resource import ResourceComponent, ResourceType
 from ..config import (
     SCREEN_WIDTH, SCREEN_HEIGHT, TILE_SIZE,
-    GRID_WIDTH, GRID_HEIGHT, COLORS
+    GRID_WIDTH, GRID_HEIGHT, COLORS,
+    RENDER_LAYERS  # Добавлен импорт RENDER_LAYERS
 )
 
 class MapSystem:
@@ -126,86 +127,7 @@ class MapSystem:
         for x, y in cells:
             self.grid[y, x] = 1
     
-    def _generate_provinces(self) -> None:
-        """Разделяет сушу на провинции."""
-        # Получаем все клетки суши
-        land_cells = set()
-        for y in range(GRID_HEIGHT):
-            for x in range(GRID_WIDTH):
-                if self.grid[y, x] == 1:
-                    land_cells.add((x, y))
-        
-        # Создаем начальные провинции
-        while land_cells and len(self.province_manager.provinces) < 20:  # MAX_PROVINCES
-            # Находим хорошую начальную точку
-            best_start = None
-            best_score = -1
-
-            for cell in land_cells:
-                x, y = cell
-                neighbor_count = sum(1 for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]
-                                if (x + dx, y + dy) in land_cells)
-                
-                if neighbor_count > best_score:
-                    best_score = neighbor_count
-                    best_start = cell
-
-            if not best_start:
-                break
-
-            # Создаем новую провинцию
-            province_id = self.province_manager.create_province()
-            if self.province_manager.add_cell_to_province(province_id, best_start):
-                land_cells.remove(best_start)
-
-        # Расширяем провинции
-        while land_cells:
-            grew = False
-            
-            # Сортируем провинции по размеру (меньшие растут первыми)
-            provinces_by_size = sorted(
-                self.province_manager.provinces.keys(),
-                key=lambda pid: len(self.province_manager.provinces[pid])  # Используем len() на множестве
-            )
-
-            for province_id in provinces_by_size:
-                province_cells = self.province_manager.provinces[province_id]
-                
-                # Находим доступные соседние клетки
-                candidates = set()
-                for cell in province_cells:  # Используем province_cells напрямую
-                    x, y = cell
-                    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                        neighbor = (x + dx, y + dy)
-                        if neighbor in land_cells:
-                            candidates.add(neighbor)
-
-                # Пробуем добавить лучшую клетку
-                best_cell = None
-                best_score = -1
-
-                for cell in candidates:
-                    x, y = cell
-                    score = sum(1 for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]
-                            if (x + dx, y + dy) in province_cells)  # Используем province_cells
-                    
-                    if score > best_score:
-                        best_score = score
-                        best_cell = cell
-
-                if best_cell and self.province_manager.add_cell_to_province(province_id, best_cell):
-                    land_cells.remove(best_cell)
-                    grew = True
-
-            if not grew:
-                break
-
-        # Обновляем наши словари для отрисовки
-        self.provinces = self.province_manager.provinces
-        self.cell_to_province = self.province_manager.cell_to_province
-
-        # Создаем сущности для провинций
-        self._create_province_entities(self.world)
+   
     
     def _generate_resources(self) -> None:
         """Генерирует ресурсы на карте."""
@@ -393,7 +315,7 @@ class MapSystem:
                                                 (rect.left, rect.top),
                                                 (rect.left, rect.bottom), 3)
                                 
-    def generate_provinces(self):
+    def generate_provinces(self) -> None:
         """Генерирует провинции на карте."""
         # Собираем все клетки суши
         land_cells = set()
@@ -403,7 +325,7 @@ class MapSystem:
                     land_cells.add((x, y))
 
         # Создаем начальные провинции
-        while land_cells and len(self.province_manager.provinces) < 20:  # MAX_PROVINCES
+        while land_cells and len(self.provinces) < 20:  # MAX_PROVINCES
             # Находим хорошую начальную точку
             best_start = None
             best_score = -1
@@ -431,16 +353,16 @@ class MapSystem:
             
             # Сортируем провинции по размеру (меньшие растут первыми)
             provinces_by_size = sorted(
-                self.province_manager.provinces.keys(),
-                key=lambda pid: len(self.province_manager.provinces[pid].cells)
+                self.provinces.keys(),
+                key=lambda pid: len(self.provinces[pid])
             )
 
             for province_id in provinces_by_size:
-                province = self.province_manager.provinces[province_id]
+                province_cells = self.provinces[province_id]
                 
                 # Находим доступные соседние клетки
                 candidates = set()
-                for cell in province.cells:
+                for cell in province_cells:
                     x, y = cell
                     for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
                         neighbor = (x + dx, y + dy)
@@ -454,7 +376,7 @@ class MapSystem:
                 for cell in candidates:
                     x, y = cell
                     score = sum(1 for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]
-                            if (x + dx, y + dy) in province.cells)
+                            if (x + dx, y + dy) in province_cells)
                     
                     if score > best_score:
                         best_score = score
@@ -504,9 +426,22 @@ class MapSystem:
                 )
             )
             
+            # Добавляем компонент отрисовки
+            world.add_component(
+                entity_id,
+                RenderableComponent(
+                    color=COLORS['province_neutral'],
+                    width=width,
+                    height=height,
+                    alpha=255,
+                    border_width=2,
+                    border_color=COLORS['province_border']
+                )
+            )
+            
             # Создаем информацию о провинции
             province_info = ProvinceInfoComponent(f"Province {province_id}")
-            province_info.cells = cells  # Устанавливаем cells непосредственно из множества
+            province_info.cells = cells.copy()  # Важно: создаем копию множества
             world.add_component(entity_id, province_info)
             
             # Добавляем ресурсы
