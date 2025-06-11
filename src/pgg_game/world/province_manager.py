@@ -10,7 +10,8 @@ class ProvinceManager:
         self.provinces: Dict[int, Set[Tuple[int, int]]] = {}
         self.cell_to_province: Dict[Tuple[int, int], int] = {}
         self.next_province_id = 0
-        self._max_province_size = 12  # Максимальный размер провинции
+        self._min_province_size = 4  # Минимальный размер провинции
+        self._max_province_size = 8  # Максимальный размер провинции
         
     def create_province(self) -> int:
         """
@@ -39,20 +40,18 @@ class ProvinceManager:
             return False
             
         if province_id not in self.provinces:
-            return False
-            
+            self.provinces[province_id] = set()
+        
+        current_size = len(self.provinces[province_id])
+        
         # Проверяем размер провинции
-        if len(self.provinces[province_id]) >= 12:  # MAX_PROVINCE_SIZE
+        if current_size >= self._max_province_size:
             return False
-            
-        # Проверяем создание плюсового пересечения
-        if self._would_create_plus_intersection(province_id, cell):
+        
+        # Проверка связности для существующей провинции
+        if current_size > 0 and not self._would_maintain_connectivity(province_id, cell):
             return False
-            
-        # Проверяем связность
-        if not self._would_maintain_connectivity(province_id, cell):
-            return False
-            
+        
         # Добавляем клетку
         self.provinces[province_id].add(cell)
         self.cell_to_province[cell] = province_id

@@ -23,7 +23,10 @@ from ..components.resource import ResourceComponent, ResourceType
 from ..config import (
     SCREEN_WIDTH, SCREEN_HEIGHT, TILE_SIZE,
     GRID_WIDTH, GRID_HEIGHT, COLORS,
-    RENDER_LAYERS  # Добавлен импорт RENDER_LAYERS
+    RENDER_LAYERS,  # Добавлен импорт RENDER_LAYERS
+    BORDER_THICKNESS,              # Добавляем
+    PROVINCE_BORDER_THICKNESS,     # Добавляем
+    PROVINCE_BORDER_DASH_LENGTH    # Добавляем
 )
 
 class MapSystem:
@@ -203,14 +206,11 @@ class MapSystem:
     def render(self, world: GameWorld) -> None:
         """
         Отрисовка карты.
-        
-        Args:
-            world: Игровой мир
         """
-        # Очищаем поверхность
-        self.surface.fill(COLORS['water'])  # Заполняем все водой
+        # 1. Заливаем фон водой
+        self.surface.fill(COLORS['water'])
         
-        # 1. Сначала рисуем все клетки и их базовую сетку
+        # 2. Отрисовка клеток и их сетки
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
                 rect = pygame.Rect(
@@ -221,175 +221,154 @@ class MapSystem:
                 )
                 
                 if self.grid[y, x] == 1:  # Если это суша
-                    # Получаем тип ресурса для клетки
+                    # Определяем тип ресурса и его цвета
                     resource_type = self.resources.get((x, y))
-                    
-                    # Определяем основной цвет клетки и цвет её сетки
                     if resource_type:
-                        # Получаем цвета из конфига на основе типа ресурса
-                        resource_name = resource_type.value
-                        base_color = COLORS[resource_name]
-                        grid_color = COLORS[f'{resource_name}_grid']
-                    else:  # По умолчанию - луга (FOOD)
-                        base_color = COLORS['food']
-                        grid_color = COLORS['food_grid']
-                    
+                        base_name = resource_type.value
+                    else:
+                        base_name = 'food'  # По умолчанию еда
+
                     # Рисуем клетку
-                    pygame.draw.rect(self.surface, base_color, rect)
+                    pygame.draw.rect(self.surface, COLORS[base_name], rect)
                     
-                    # Если клетка принадлежит провинции, накладываем оттенок цвета провинции
-                    if (x, y) in self.cell_to_province:
-                        province_id = self.cell_to_province[(x, y)]
-                        province_color = self._get_province_color(province_id)
-                        overlay = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
-                        pygame.draw.rect(overlay, (*province_color, 128), overlay.get_rect())
-                        self.surface.blit(overlay, rect)
-                    
-                    # Рисуем сетку клетки
-                    pygame.draw.rect(self.surface, grid_color, rect, 1)
+                    # Рисуем сетку с цветом, соответствующим типу клетки
+                    pygame.draw.rect(self.surface, COLORS[f'{base_name}_grid'], rect, 1)
+
                 else:  # Если это вода
                     # Рисуем сетку воды
-                    pygame.draw.rect(self.surface, COLORS['grid_lines_water'], rect, 1)
-        
-            # В методе render замените часть с отрисовкой границ провинций на:
-        # 2. Рисуем границы провинций
-        for province_id, province_cells in self.provinces.items():
-            # Получаем граничные клетки провинции
-            border_cells = self.province_manager.get_border_cells(province_id)
-            
-            for cell in border_cells:
-                x, y = cell
-                rect = pygame.Rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                    pygame.draw.rect(self.surface, COLORS['water_grid'], rect, 1)
+
+        # 3. Отрисовка границ между клетками
+        for y in range(GRID_HEIGHT + 1):  # +1 чтобы включить нижнюю границу
+            for x in range(GRID_WIDTH + 1):  # +1 чтобы включить правую границу
+                # Проверяем все четыре клетки вокруг текущей точки пересечения сетки
+                corners = [
+                    (x-1, y-1), # Верхняя левая
+                    (x, y-1),   # Верхняя правая
+                    (x-1, y),   # Нижняя левая
+                    (x, y)      # Нижняя правая
+                ]
                 
-                # Проверяем каждую сторону клетки
-                for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                    neighbor = (x + dx, y + dy)
-                    # Проверяем, принадлежит ли сосед другой провинции или является водой
-                    if neighbor not in self.cell_to_province or \
-                    self.cell_to_province[neighbor] != province_id:
-                        # Рисуем границу провинции
-                        if dx == 0:  # Вертикальная граница
-                            start_pos = (rect.x + (TILE_SIZE if dx > 0 else 0), rect.y)
-                            end_pos = (start_pos[0], rect.y + TILE_SIZE)
-                        else:  # Горизонтальная граница
-                            start_pos = (rect.x, rect.y + (TILE_SIZE if dy > 0 else 0))
-                            end_pos = (rect.x + TILE_SIZE, start_pos[1])
-                        
-                        pygame.draw.line(self.surface, COLORS['province_border'],
-                                    start_pos, end_pos, 2)
-        
-        # 3. Затем рисуем границу острова
-        for y in range(GRID_HEIGHT):
-            for x in range(GRID_WIDTH):
-                if self.grid[y, x] == 1:  # Если это суша
-                    # Проверяем соседние клетки
-                    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                        new_x, new_y = x + dx, y + dy
-                        # Если сосед - вода или за пределами карты
-                        if (new_x < 0 or new_x >= GRID_WIDTH or 
-                            new_y < 0 or new_y >= GRID_HEIGHT or 
-                            self.grid[new_y, new_x] == 0):
-                            # Рисуем толстую границу острова
-                            rect = pygame.Rect(
-                                x * TILE_SIZE,
-                                y * TILE_SIZE,
-                                TILE_SIZE,
-                                TILE_SIZE
-                            )
-                            if dx == 0:  # Вертикальная граница
-                                if dy == 1:  # Нижняя
-                                    pygame.draw.line(self.surface, COLORS['border_thick'],
-                                                (rect.left, rect.bottom),
-                                                (rect.right, rect.bottom), 3)
-                                else:  # Верхняя
-                                    pygame.draw.line(self.surface, COLORS['border_thick'],
-                                                (rect.left, rect.top),
-                                                (rect.right, rect.top), 3)
-                            else:  # Горизонтальная граница
-                                if dx == 1:  # Правая
-                                    pygame.draw.line(self.surface, COLORS['border_thick'],
-                                                (rect.right, rect.top),
-                                                (rect.right, rect.bottom), 3)
-                                else:  # Левая
-                                    pygame.draw.line(self.surface, COLORS['border_thick'],
-                                                (rect.left, rect.top),
-                                                (rect.left, rect.bottom), 3)
+                # Получаем значения (суша/вода) для каждого угла
+                corner_values = []
+                corner_provinces = []
+                for cx, cy in corners:
+                    if 0 <= cx < GRID_WIDTH and 0 <= cy < GRID_HEIGHT:
+                        corner_values.append(self.grid[cy, cx])
+                        corner_provinces.append(self.cell_to_province.get((cx, cy)))
+                    else:
+                        corner_values.append(0)  # За пределами карты считаем водой
+                        corner_provinces.append(None)
+                
+                # Координаты точки пересечения в пикселях
+                px = x * TILE_SIZE
+                py = y * TILE_SIZE
+                
+                # Проверяем горизонтальную границу
+                if y > 0 and y < GRID_HEIGHT:
+                    left_is_land = corner_values[0] == 1 or corner_values[2] == 1
+                    right_is_land = corner_values[1] == 1 or corner_values[3] == 1
+                    
+                    # Граница острова (между сушей и водой)
+                    if left_is_land != right_is_land:
+                        pygame.draw.line(
+                            self.surface,
+                            COLORS['border_thick'],
+                            (px, py - BORDER_THICKNESS//2),
+                            (px, py + BORDER_THICKNESS//2),
+                            BORDER_THICKNESS
+                        )
+                    # Граница провинции (между разными провинциями на суше)
+                    elif (left_is_land and right_is_land and 
+                        any(p is not None for p in corner_provinces) and
+                        len(set(p for p in corner_provinces if p is not None)) > 1):
+                        # Рисуем пунктирную линию
+                        for i in range(0, TILE_SIZE, PROVINCE_BORDER_DASH_LENGTH * 2):
+                            if i + PROVINCE_BORDER_DASH_LENGTH <= TILE_SIZE:
+                                pygame.draw.line(
+                                    self.surface,
+                                    COLORS['province_border'],
+                                    (px, py + i),
+                                    (px, py + i + PROVINCE_BORDER_DASH_LENGTH),
+                                    PROVINCE_BORDER_THICKNESS
+                                )
+                
+                # Проверяем вертикальную границу
+                if x > 0 and x < GRID_WIDTH:
+                    top_is_land = corner_values[0] == 1 or corner_values[1] == 1
+                    bottom_is_land = corner_values[2] == 1 or corner_values[3] == 1
+                    
+                    # Граница острова (между сушей и водой)
+                    if top_is_land != bottom_is_land:
+                        pygame.draw.line(
+                            self.surface,
+                            COLORS['border_thick'],
+                            (px - BORDER_THICKNESS//2, py),
+                            (px + BORDER_THICKNESS//2, py),
+                            BORDER_THICKNESS
+                        )
+                    # Граница провинции (между разными провинциями на суше)
+                    elif (top_is_land and bottom_is_land and 
+                        any(p is not None for p in corner_provinces) and
+                        len(set(p for p in corner_provinces if p is not None)) > 1):
+                        # Рисуем пунктирную линию
+                        for i in range(0, TILE_SIZE, PROVINCE_BORDER_DASH_LENGTH * 2):
+                            if i + PROVINCE_BORDER_DASH_LENGTH <= TILE_SIZE:
+                                pygame.draw.line(
+                                    self.surface,
+                                    COLORS['province_border'],
+                                    (px + i, py),
+                                    (px + i + PROVINCE_BORDER_DASH_LENGTH, py),
+                                    PROVINCE_BORDER_THICKNESS
+                                )
                                 
     def generate_provinces(self) -> None:
         """Генерирует провинции на карте."""
+        # Очищаем старые провинции
+        self.provinces.clear()
+        self.cell_to_province.clear()
+        self.province_manager = ProvinceManager()
+        
         # Собираем все клетки суши
         land_cells = set()
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
                 if self.grid[y, x] == 1:
                     land_cells.add((x, y))
-
-        # Создаем начальные провинции
-        while land_cells and len(self.provinces) < 20:  # MAX_PROVINCES
-            # Находим хорошую начальную точку
-            best_start = None
-            best_score = -1
-
-            for cell in land_cells:
-                x, y = cell
-                neighbor_count = sum(1 for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]
-                                if (x + dx, y + dy) in land_cells)
-                
-                if neighbor_count > best_score:
-                    best_score = neighbor_count
-                    best_start = cell
-
-            if not best_start:
-                break
-
+        
+        # Создаем провинции пока есть свободные клетки
+        while land_cells:
             # Создаем новую провинцию
             province_id = self.province_manager.create_province()
-            if self.province_manager.add_cell_to_province(province_id, best_start):
-                land_cells.remove(best_start)
-
-        # Расширяем провинции
-        while land_cells:
-            grew = False
+            province_cells = set()
             
-            # Сортируем провинции по размеру (меньшие растут первыми)
-            provinces_by_size = sorted(
-                self.provinces.keys(),
-                key=lambda pid: len(self.provinces[pid])
-            )
-
-            for province_id in provinces_by_size:
-                province_cells = self.provinces[province_id]
-                
-                # Находим доступные соседние клетки
-                candidates = set()
+            # Выбираем начальную точку провинции
+            start = random.choice(list(land_cells))
+            province_cells.add(start)
+            land_cells.remove(start)
+            self.province_manager.add_cell_to_province(province_id, start)
+            
+            # Расширяем провинцию до нужного размера
+            while len(province_cells) < self.province_manager._min_province_size and land_cells:
+                candidates = []
+                # Находим все соседние клетки
                 for cell in province_cells:
                     x, y = cell
                     for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
                         neighbor = (x + dx, y + dy)
                         if neighbor in land_cells:
-                            candidates.add(neighbor)
-
-                # Пробуем добавить лучшую клетку
-                best_cell = None
-                best_score = -1
-
-                for cell in candidates:
-                    x, y = cell
-                    score = sum(1 for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]
-                            if (x + dx, y + dy) in province_cells)
-                    
-                    if score > best_score:
-                        best_score = score
-                        best_cell = cell
-
-                if best_cell and self.province_manager.add_cell_to_province(province_id, best_cell):
-                    land_cells.remove(best_cell)
-                    grew = True
-
-            if not grew:
-                break
-
-        # Обновляем наши словари для отрисовки
+                            candidates.append(neighbor)
+                
+                if not candidates:
+                    break
+                
+                # Выбираем случайную соседнюю клетку
+                next_cell = random.choice(candidates)
+                province_cells.add(next_cell)
+                land_cells.remove(next_cell)
+                self.province_manager.add_cell_to_province(province_id, next_cell)
+        
+        # Обновляем словари для отрисовки
         self.provinces = self.province_manager.provinces
         self.cell_to_province = self.province_manager.cell_to_province
 
@@ -410,6 +389,9 @@ class MapSystem:
             entity_id = world.create_entity()
             
             # Вычисляем размеры и позицию провинции
+            if not cells:  # Пропускаем пустые провинции
+                continue
+                
             min_x = min(x for x, _ in cells) * TILE_SIZE
             min_y = min(y for _, y in cells) * TILE_SIZE
             max_x = max(x for x, _ in cells) * TILE_SIZE
@@ -435,13 +417,15 @@ class MapSystem:
                     height=height,
                     alpha=255,
                     border_width=2,
-                    border_color=COLORS['province_border']
+                    border_color=COLORS['province_border'],
+                    layer=RENDER_LAYERS['provinces']  # Используем слой для провинций
                 )
             )
             
             # Создаем информацию о провинции
             province_info = ProvinceInfoComponent(f"Province {province_id}")
-            province_info.cells = cells.copy()  # Важно: создаем копию множества
+            cells_copy = cells.copy() if hasattr(cells, 'copy') else set(cells)
+            province_info.cells = cells_copy
             world.add_component(entity_id, province_info)
             
             # Добавляем ресурсы
