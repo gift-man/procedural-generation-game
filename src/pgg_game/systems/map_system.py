@@ -246,7 +246,6 @@ class MapSystem:
                     else:  # По умолчанию - луга (FOOD)
                         base_color = COLORS['food']
                         grid_color = COLORS['food_grid']
-                        
                     
                     # Рисуем клетку
                     pygame.draw.rect(self.surface, base_color, rect)
@@ -254,38 +253,44 @@ class MapSystem:
                     pygame.draw.rect(self.surface, grid_color, rect, 1)
                 else:  # Если это вода
                     # Рисуем сетку воды
-                    pygame.draw.rect(self.surface, COLORS['water_grid'], rect, 1)
+                    pygame.draw.rect(self.surface, COLORS['grid_lines_water'], rect, 1)
         
         # 2. Затем рисуем границу острова
-        # Проходим по всем клеткам и ищем границу между сушей и водой
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
                 if self.grid[y, x] == 1:  # Если это суша
                     # Проверяем соседние клетки
-                    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)]:
+                    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
                         new_x, new_y = x + dx, y + dy
                         # Если сосед - вода или за пределами карты
                         if (new_x < 0 or new_x >= GRID_WIDTH or 
                             new_y < 0 or new_y >= GRID_HEIGHT or 
                             self.grid[new_y, new_x] == 0):
-                            # Рисуем часть границы острова
-                            start_pos = (x * TILE_SIZE, y * TILE_SIZE)
-                            if dx == 0 and dy == 1:  # Нижняя граница
-                                pygame.draw.line(self.surface, (0, 0, 0), 
-                                            (start_pos[0], start_pos[1] + TILE_SIZE),
-                                            (start_pos[0] + TILE_SIZE, start_pos[1] + TILE_SIZE), 3)
-                            elif dx == 0 and dy == -1:  # Верхняя граница
-                                pygame.draw.line(self.surface, (0, 0, 0),
-                                            start_pos,
-                                            (start_pos[0] + TILE_SIZE, start_pos[1]), 3)
-                            elif dx == 1 and dy == 0:  # Правая граница
-                                pygame.draw.line(self.surface, (0, 0, 0),
-                                            (start_pos[0] + TILE_SIZE, start_pos[1]),
-                                            (start_pos[0] + TILE_SIZE, start_pos[1] + TILE_SIZE), 3)
-                            elif dx == -1 and dy == 0:  # Левая граница
-                                pygame.draw.line(self.surface, (0, 0, 0),
-                                            start_pos,
-                                            (start_pos[0], start_pos[1] + TILE_SIZE), 3)
+                            # Рисуем толстую границу острова
+                            rect = pygame.Rect(
+                                x * TILE_SIZE,
+                                y * TILE_SIZE,
+                                TILE_SIZE,
+                                TILE_SIZE
+                            )
+                            if dx == 0:  # Вертикальная граница
+                                if dy == 1:  # Нижняя
+                                    pygame.draw.line(self.surface, COLORS['border_thick'],
+                                                (rect.left, rect.bottom),
+                                                (rect.right, rect.bottom), 3)
+                                else:  # Верхняя
+                                    pygame.draw.line(self.surface, COLORS['border_thick'],
+                                                (rect.left, rect.top),
+                                                (rect.right, rect.top), 3)
+                            else:  # Горизонтальная граница
+                                if dx == 1:  # Правая
+                                    pygame.draw.line(self.surface, COLORS['border_thick'],
+                                                (rect.right, rect.top),
+                                                (rect.right, rect.bottom), 3)
+                                else:  # Левая
+                                    pygame.draw.line(self.surface, COLORS['border_thick'],
+                                                (rect.left, rect.top),
+                                                (rect.left, rect.bottom), 3)
 
     def get_surface(self) -> pygame.Surface:
         """
