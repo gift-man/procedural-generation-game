@@ -11,9 +11,11 @@ TILE_SIZE = 32
 GRID_WIDTH = SCREEN_WIDTH // TILE_SIZE
 GRID_HEIGHT = SCREEN_HEIGHT // TILE_SIZE
 
-BORDER_THICKNESS = 4  # Толщина границы острова
-PROVINCE_BORDER_THICKNESS = 2  # Толщина границы провинции
-PROVINCE_BORDER_DASH_LENGTH = 4  # Длина штриха в пунктирной линии
+# Настройки границ
+BORDER_THICKNESS = 6  # Толстая граница острова
+PROVINCE_BORDER_THICKNESS = 2  # Тонкая граница провинций
+PROVINCE_BORDER_DASH_LENGTH = 8  # Длина штриха
+PROVINCE_BORDER_GAP_LENGTH = 8  # Длина промежутка
 # Слои рендеринга (порядок отрисовки)
 # Слои рендеринга (порядок отрисовки)
 RENDER_LAYERS = {
@@ -60,7 +62,7 @@ COLORS = {
     
     # Обновить цвета границ
     'border_thick': (20, 20, 20),      # Почти черный для границы острова
-    'province_border': (200, 200, 200), # Светло-серый для границ провинций
+    'province_border': (60, 60, 60),    # Темно-серый для границ провинций
     
     # Цвета игроков
     'player_one': (255, 0, 0),         # Красный для первого игрока
