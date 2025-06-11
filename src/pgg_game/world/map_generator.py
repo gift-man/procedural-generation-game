@@ -6,6 +6,7 @@ import pygame
 from typing import List, Tuple, Dict, Set, Optional
 from dataclasses import dataclass
 
+from ..world.province_manager import ProvinceManager
 from .noise_generator import NoiseConfig, create_noise_generator
 from ..world.game_world import GameWorld
 from ..components.transform import TransformComponent
@@ -298,7 +299,87 @@ class MapGenerator:
                     0 <= new_y < GRID_HEIGHT):
                     neighbors.append(self.terrain_grid[new_y][new_x])
         return neighbors
-    
+    def _generate_provinces(self, land_cells: Set[Tuple[int, int]]) -> None:
+        """Генерирует провинции на острове."""
+        province_manager = ProvinceManager()
+        unassigned_cells = land_cells.copy()
+
+        # Создаем начальные провинции
+        while unassigned_cells and len(province_manager.provinces) < 20:  # MAX_PROVINCES
+            # Находим хорошую начальную точку
+            best_start = None
+            best_score = -1
+
+            for cell in unassigned_cells:
+                x, y = cell
+                neighbor_count = sum(1 for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]
+                                if (x + dx, y + dy) in unassigned_cells)
+                
+                if neighbor_count > best_score:
+                    best_score = neighbor_count
+                    best_start = cell
+
+            if not best_start:
+                break
+
+            # Создаем новую провинцию
+            province_id = province_manager.create_province()
+            if province_manager.add_cell_to_province(province_id, best_start):
+                unassigned_cells.remove(best_start)
+
+        # Расширяем провинции
+        while unassigned_cells:
+            grew = False
+            
+            # Сортируем провинции по размеру (меньшие растут первыми)
+            provinces_by_size = sorted(
+                province_manager.provinces.keys(),
+                key=lambda pid: len(province_manager.provinces[pid].cells)
+            )
+
+            for province_id in provinces_by_size:
+                province = province_manager.provinces[province_id]
+                
+                # Находим доступные соседние клетки
+                candidates = set()
+                for cell in province.cells:
+                    x, y = cell
+                    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                        neighbor = (x + dx, y + dy)
+                        if neighbor in unassigned_cells:
+                            candidates.add(neighbor)
+
+                # Пробуем добавить лучшую клетку
+                best_cell = None
+                best_score = -1
+
+                for cell in candidates:
+                    x, y = cell
+                    score = sum(1 for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]
+                            if (x + dx, y + dy) in province.cells)
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_cell = cell
+
+                if best_cell and province_manager.add_cell_to_province(province_id, best_cell):
+                    unassigned_cells.remove(best_cell)
+                    grew = True
+
+            if not grew:
+                break
+
+        # Создаем сущности провинций
+        for province_id, province in province_manager.provinces.items():
+            entity_id = self.world.create_entity()
+            
+            # Добавляем компоненты
+            self.world.add_component(entity_id, ProvinceInfoComponent(f"Province {province_id}"))
+            
+            # Добавляем ресурсы провинции
+            resource_component = ResourceComponent()
+            self.world.add_component(entity_id, resource_component)
+
     def get_province_at(self, screen_x: int, screen_y: int) -> int:
         """
         Возвращает ID провинции по координатам экрана.

@@ -14,6 +14,7 @@ except ImportError:
     print("pip install numpy>=1.24.0")
     sys.exit(1)
 
+from ..world.province_manager import ProvinceManager
 from ..world.game_world import GameWorld
 from ..components.transform import TransformComponent
 from ..components.renderable import RenderableComponent
@@ -30,9 +31,10 @@ class MapSystem:
     def __init__(self):
         """Инициализация системы карты."""
         self.grid = np.zeros((GRID_HEIGHT, GRID_WIDTH), dtype=np.int32)
-        self.provinces: Dict[int, Set[Tuple[int, int]]] = {}
-        self.resources: Dict[Tuple[int, int], ResourceType] = {}
-        self.world: Optional[GameWorld] = None
+        self.provinces = {}  # Словарь провинций
+        self.cell_to_province = {}  # Маппинг клеток к провинциям
+        self.resources = {}  # Словарь ресурсов
+        self.world = None
         self.map_generated = False
         
         # Настройки генерации
@@ -43,14 +45,17 @@ class MapSystem:
         
         # Настройки ресурсов
         self.resource_clusters = {
-            ResourceType.GOLD: {'min_size': 1, 'chance': 0.15},   # Было GOLD_MINE
+            ResourceType.GOLD: {'min_size': 1, 'chance': 0.15},
             ResourceType.STONE: {'min_size': 2, 'chance': 0.25},
             ResourceType.WOOD: {'min_size': 4, 'chance': 0.35},
-            ResourceType.FOOD: {'min_size': 1, 'chance': 1.0}     # Луга
+            ResourceType.FOOD: {'min_size': 1, 'chance': 1.0}
         }
-        
+
         # Создаем поверхность для карты
         self.surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+
+        # Создаем менеджер провинций
+        self.province_manager = ProvinceManager()
 
     def update(self, world: GameWorld) -> None:
         """
@@ -89,6 +94,9 @@ class MapSystem:
         
         # 5. Создаем сущности для провинций
         self._create_province_entities(world)
+
+        # После успешной генерации острова
+        self.map_generated = True
     
     def _generate_islands(self) -> None:
         """Генерирует острова на карте."""
@@ -212,6 +220,21 @@ class MapSystem:
                     frontier.append((new_x, new_y))
         
         return cluster
+    def _get_province_color(self, province_id: int) -> Tuple[int, int, int]:
+        """
+        Возвращает цвет для провинции.
+        
+        Args:
+            province_id: ID провинции
+            
+        Returns:
+            Tuple[int, int, int]: RGB цвет
+        """
+        # Используем ID провинции для генерации уникального цвета
+        r = (province_id * 67 + 100) % 156 + 100  # 100-255
+        g = (province_id * 127 + 150) % 156 + 100  # 100-255
+        b = (province_id * 191 + 200) % 156 + 100  # 100-255
+        return (r, g, b)
     
     def render(self, world: GameWorld) -> None:
         """
@@ -240,7 +263,7 @@ class MapSystem:
                     # Определяем основной цвет клетки и цвет её сетки
                     if resource_type:
                         # Получаем цвета из конфига на основе типа ресурса
-                        resource_name = resource_type.value  # получаем строковое значение из enum (wood, gold, stone, food)
+                        resource_name = resource_type.value
                         base_color = COLORS[resource_name]
                         grid_color = COLORS[f'{resource_name}_grid']
                     else:  # По умолчанию - луга (FOOD)
@@ -249,13 +272,49 @@ class MapSystem:
                     
                     # Рисуем клетку
                     pygame.draw.rect(self.surface, base_color, rect)
+                    
+                    # Если клетка принадлежит провинции, накладываем оттенок цвета провинции
+                    if (x, y) in self.cell_to_province:
+                        province_id = self.cell_to_province[(x, y)]
+                        province_color = self._get_province_color(province_id)
+                        overlay = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
+                        pygame.draw.rect(overlay, (*province_color, 128), overlay.get_rect())
+                        self.surface.blit(overlay, rect)
+                    
                     # Рисуем сетку клетки
                     pygame.draw.rect(self.surface, grid_color, rect, 1)
                 else:  # Если это вода
                     # Рисуем сетку воды
                     pygame.draw.rect(self.surface, COLORS['grid_lines_water'], rect, 1)
         
-        # 2. Затем рисуем границу острова
+            # В методе render замените часть с отрисовкой границ провинций на:
+        # 2. Рисуем границы провинций
+        for province_id, province_cells in self.provinces.items():
+            # Получаем граничные клетки провинции
+            border_cells = self.province_manager.get_border_cells(province_id)
+            
+            for cell in border_cells:
+                x, y = cell
+                rect = pygame.Rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                
+                # Проверяем каждую сторону клетки
+                for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                    neighbor = (x + dx, y + dy)
+                    # Проверяем, принадлежит ли сосед другой провинции или является водой
+                    if neighbor not in self.cell_to_province or \
+                    self.cell_to_province[neighbor] != province_id:
+                        # Рисуем границу провинции
+                        if dx == 0:  # Вертикальная граница
+                            start_pos = (rect.x + (TILE_SIZE if dx > 0 else 0), rect.y)
+                            end_pos = (start_pos[0], rect.y + TILE_SIZE)
+                        else:  # Горизонтальная граница
+                            start_pos = (rect.x, rect.y + (TILE_SIZE if dy > 0 else 0))
+                            end_pos = (rect.x + TILE_SIZE, start_pos[1])
+                        
+                        pygame.draw.line(self.surface, COLORS['province_border'],
+                                    start_pos, end_pos, 2)
+        
+        # 3. Затем рисуем границу острова
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
                 if self.grid[y, x] == 1:  # Если это суша
@@ -291,6 +350,85 @@ class MapSystem:
                                     pygame.draw.line(self.surface, COLORS['border_thick'],
                                                 (rect.left, rect.top),
                                                 (rect.left, rect.bottom), 3)
+                                
+    def generate_provinces(self):
+        """Генерирует провинции на карте."""
+        # Собираем все клетки суши
+        land_cells = set()
+        for y in range(GRID_HEIGHT):
+            for x in range(GRID_WIDTH):
+                if self.grid[y, x] == 1:
+                    land_cells.add((x, y))
+
+        # Создаем начальные провинции
+        while land_cells and len(self.province_manager.provinces) < 20:  # MAX_PROVINCES
+            # Находим хорошую начальную точку
+            best_start = None
+            best_score = -1
+
+            for cell in land_cells:
+                x, y = cell
+                neighbor_count = sum(1 for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]
+                                if (x + dx, y + dy) in land_cells)
+                
+                if neighbor_count > best_score:
+                    best_score = neighbor_count
+                    best_start = cell
+
+            if not best_start:
+                break
+
+            # Создаем новую провинцию
+            province_id = self.province_manager.create_province()
+            if self.province_manager.add_cell_to_province(province_id, best_start):
+                land_cells.remove(best_start)
+
+        # Расширяем провинции
+        while land_cells:
+            grew = False
+            
+            # Сортируем провинции по размеру (меньшие растут первыми)
+            provinces_by_size = sorted(
+                self.province_manager.provinces.keys(),
+                key=lambda pid: len(self.province_manager.provinces[pid].cells)
+            )
+
+            for province_id in provinces_by_size:
+                province = self.province_manager.provinces[province_id]
+                
+                # Находим доступные соседние клетки
+                candidates = set()
+                for cell in province.cells:
+                    x, y = cell
+                    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                        neighbor = (x + dx, y + dy)
+                        if neighbor in land_cells:
+                            candidates.add(neighbor)
+
+                # Пробуем добавить лучшую клетку
+                best_cell = None
+                best_score = -1
+
+                for cell in candidates:
+                    x, y = cell
+                    score = sum(1 for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]
+                            if (x + dx, y + dy) in province.cells)
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_cell = cell
+
+                if best_cell and self.province_manager.add_cell_to_province(province_id, best_cell):
+                    land_cells.remove(best_cell)
+                    grew = True
+
+            if not grew:
+                break
+
+        # Обновляем наши словари для отрисовки
+        self.provinces = self.province_manager.provinces
+        self.cell_to_province = self.province_manager.cell_to_province
+
 
     def get_surface(self) -> pygame.Surface:
         """
