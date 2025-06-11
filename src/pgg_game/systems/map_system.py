@@ -239,40 +239,47 @@ class MapSystem:
                     # Рисуем сетку воды
                     pygame.draw.rect(self.surface, COLORS['water_grid'], rect, 1)
 
-        # 3. Отрисовка границы острова (толстая линия)
+        # 3. Отрисовка границы острова
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
-                if self.grid[y, x] == 1:  # Если это суша
-                    # Проверяем все соседние клетки
-                    for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                # Проверяем только клетки суши
+                if self.grid[y, x] == 1:
+                    # Проверяем все 4 стороны клетки
+                    sides = [
+                        # формат: (dx, dy, start_pos, end_pos) для каждой стороны
+                        # dx, dy - смещение для проверки соседа
+                        # start_pos, end_pos - координаты линии границы
+                        
+                        # Верхняя сторона
+                        (0, -1,
+                        (x * TILE_SIZE, y * TILE_SIZE),
+                        ((x + 1) * TILE_SIZE, y * TILE_SIZE)),
+                        
+                        # Правая сторона
+                        (1, 0,
+                        ((x + 1) * TILE_SIZE, y * TILE_SIZE),
+                        ((x + 1) * TILE_SIZE, (y + 1) * TILE_SIZE)),
+                        
+                        # Нижняя сторона
+                        (0, 1,
+                        (x * TILE_SIZE, (y + 1) * TILE_SIZE),
+                        ((x + 1) * TILE_SIZE, (y + 1) * TILE_SIZE)),
+                        
+                        # Левая сторона
+                        (-1, 0,
+                        (x * TILE_SIZE, y * TILE_SIZE),
+                        (x * TILE_SIZE, (y + 1) * TILE_SIZE))
+                    ]
+                    
+                    # Проверяем каждую сторону
+                    for dx, dy, start_pos, end_pos in sides:
                         nx, ny = x + dx, y + dy
                         
                         # Если сосед - вода или за пределами карты
                         if (nx < 0 or nx >= GRID_WIDTH or 
                             ny < 0 or ny >= GRID_HEIGHT or 
                             self.grid[ny, nx] == 0):
-                            
-                            # Определяем начало и конец линии на границе между клетками
-                            if dx == 0:  # Вертикальная граница
-                                start_pos = (
-                                    x * TILE_SIZE + (TILE_SIZE if dx > 0 else 0),
-                                    y * TILE_SIZE
-                                )
-                                end_pos = (
-                                    start_pos[0],
-                                    y * TILE_SIZE + TILE_SIZE
-                                )
-                            else:  # Горизонтальная граница
-                                start_pos = (
-                                    x * TILE_SIZE,
-                                    y * TILE_SIZE + (TILE_SIZE if dy > 0 else 0)
-                                )
-                                end_pos = (
-                                    x * TILE_SIZE + TILE_SIZE,
-                                    start_pos[1]
-                                )
-                            
-                            # Рисуем толстую линию границы острова
+                            # Рисуем границу острова
                             pygame.draw.line(
                                 self.surface,
                                 COLORS['border_thick'],
@@ -281,74 +288,84 @@ class MapSystem:
                                 BORDER_THICKNESS
                             )
 
-        # 4. Отрисовка границ провинций (пунктирные линии)
-        # Сначала горизонтальные границы
-        for y in range(GRID_HEIGHT + 1):
+        # 4. Отрисовка границ провинций
+        for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
-                # Только если обе клетки - суша
-                if (y > 0 and y < GRID_HEIGHT and
-                    self.grid[y-1, x] == 1 and 
-                    self.grid[y, x] == 1):
-                    
-                    # Получаем ID провинций для клеток сверху и снизу
-                    top_province = self.cell_to_province.get((x, y-1))
-                    bottom_province = self.cell_to_province.get((x, y))
-                    
-                    # Если клетки принадлежат разным провинциям
-                    if (top_province is not None and 
-                        bottom_province is not None and 
-                        top_province != bottom_province):
+                # Проверяем только клетки суши
+                if self.grid[y, x] == 1:
+                    current_province = self.cell_to_province.get((x, y))
+                    if current_province is not None:
+                        # Проверяем правую и нижнюю границы
+                        neighbors = [
+                            # (dx, dy, start_pos, end_pos)
+                            # Правая граница
+                            (1, 0,
+                            ((x + 1) * TILE_SIZE, y * TILE_SIZE),
+                            ((x + 1) * TILE_SIZE, (y + 1) * TILE_SIZE)),
+                            
+                            # Нижняя граница
+                            (0, 1,
+                            (x * TILE_SIZE, (y + 1) * TILE_SIZE),
+                            ((x + 1) * TILE_SIZE, (y + 1) * TILE_SIZE))
+                        ]
                         
-                        # Рисуем пунктирную линию
-                        x_start = x * TILE_SIZE
-                        y_pos = y * TILE_SIZE
-                        x_end = x_start + TILE_SIZE
-                        
-                        current_x = x_start
-                        while current_x < x_end:
-                            line_end = min(current_x + PROVINCE_BORDER_DASH_LENGTH, x_end)
-                            pygame.draw.line(
-                                self.surface,
-                                COLORS['province_border'],
-                                (current_x, y_pos),
-                                (line_end, y_pos),
-                                PROVINCE_BORDER_THICKNESS
-                            )
-                            current_x += PROVINCE_BORDER_DASH_LENGTH + PROVINCE_BORDER_GAP_LENGTH
-
-        # Затем вертикальные границы
-        for x in range(GRID_WIDTH + 1):
-            for y in range(GRID_HEIGHT):
-                # Только если обе клетки - суша
-                if (x > 0 and x < GRID_WIDTH and
-                    self.grid[y, x-1] == 1 and 
-                    self.grid[y, x] == 1):
-                    
-                    # Получаем ID провинций для клеток слева и справа
-                    left_province = self.cell_to_province.get((x-1, y))
-                    right_province = self.cell_to_province.get((x, y))
-                    
-                    # Если клетки принадлежат разным провинциям
-                    if (left_province is not None and 
-                        right_province is not None and 
-                        left_province != right_province):
-                        
-                        # Рисуем пунктирную линию
-                        y_start = y * TILE_SIZE
-                        x_pos = x * TILE_SIZE
-                        y_end = y_start + TILE_SIZE
-                        
-                        current_y = y_start
-                        while current_y < y_end:
-                            line_end = min(current_y + PROVINCE_BORDER_DASH_LENGTH, y_end)
-                            pygame.draw.line(
-                                self.surface,
-                                COLORS['province_border'],
-                                (x_pos, current_y),
-                                (x_pos, line_end),
-                                PROVINCE_BORDER_THICKNESS
-                            )
-                            current_y += PROVINCE_BORDER_DASH_LENGTH + PROVINCE_BORDER_GAP_LENGTH
+                        for dx, dy, start_pos, end_pos in neighbors:
+                            nx, ny = x + dx, y + dy
+                            
+                            # Проверяем соседнюю клетку
+                            if (0 <= nx < GRID_WIDTH and 
+                                0 <= ny < GRID_HEIGHT and 
+                                self.grid[ny, nx] == 1):  # Если сосед - суша
+                                
+                                neighbor_province = self.cell_to_province.get((nx, ny))
+                                
+                                # Если провинции разные
+                                if (neighbor_province is not None and 
+                                    neighbor_province != current_province):
+                                    
+                                    # Рисуем пунктирную границу
+                                    dash_start = start_pos
+                                    total_length = (
+                                        (end_pos[0] - start_pos[0])**2 + 
+                                        (end_pos[1] - start_pos[1])**2
+                                    )**0.5
+                                    
+                                    dash_length = PROVINCE_BORDER_DASH_LENGTH
+                                    gap_length = PROVINCE_BORDER_GAP_LENGTH
+                                    dash_vector = (
+                                        (end_pos[0] - start_pos[0]) / total_length,
+                                        (end_pos[1] - start_pos[1]) / total_length
+                                    )
+                                    
+                                    current_pos = 0
+                                    while current_pos < total_length:
+                                        # Определяем конец текущего штриха
+                                        current_end = min(
+                                            current_pos + dash_length,
+                                            total_length
+                                        )
+                                        
+                                        # Рассчитываем координаты штриха
+                                        dash_end = (
+                                            start_pos[0] + dash_vector[0] * current_end,
+                                            start_pos[1] + dash_vector[1] * current_end
+                                        )
+                                        dash_start = (
+                                            start_pos[0] + dash_vector[0] * current_pos,
+                                            start_pos[1] + dash_vector[1] * current_pos
+                                        )
+                                        
+                                        # Рисуем штрих
+                                        pygame.draw.line(
+                                            self.surface,
+                                            COLORS['province_border'],
+                                            dash_start,
+                                            dash_end,
+                                            PROVINCE_BORDER_THICKNESS
+                                        )
+                                        
+                                        # Переходим к следующему штриху
+                                        current_pos += dash_length + gap_length
                             
     def generate_provinces(self) -> None:
         """Генерирует провинции на карте."""

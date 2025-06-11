@@ -12,10 +12,10 @@ GRID_WIDTH = SCREEN_WIDTH // TILE_SIZE
 GRID_HEIGHT = SCREEN_HEIGHT // TILE_SIZE
 
 # Настройки границ
-BORDER_THICKNESS = 6  # Толстая граница острова
+BORDER_THICKNESS = 4  # Толстая граница острова
 PROVINCE_BORDER_THICKNESS = 2  # Тонкая граница провинций
-PROVINCE_BORDER_DASH_LENGTH = 8  # Длина штриха
-PROVINCE_BORDER_GAP_LENGTH = 8  # Длина промежутка
+PROVINCE_BORDER_DASH_LENGTH = 5  # Длина штриха
+PROVINCE_BORDER_GAP_LENGTH = 5  # Длина промежутка
 # Слои рендеринга (порядок отрисовки)
 # Слои рендеринга (порядок отрисовки)
 RENDER_LAYERS = {
@@ -61,7 +61,7 @@ COLORS = {
     'stone_grid': (98, 98, 98),        # Темнее на 30%
     
     # Обновить цвета границ
-    'border_thick': (20, 20, 20),      # Почти черный для границы острова
+    'border_thick': (60, 60, 60),      # Почти черный для границы острова
     'province_border': (60, 60, 60),    # Темно-серый для границ провинций
     
     # Цвета игроков
