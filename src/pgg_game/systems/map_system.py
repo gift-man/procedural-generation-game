@@ -35,9 +35,6 @@ class MapSystem:
         self.world: Optional[GameWorld] = None
         self.map_generated = False
         
-        # Создаем поверхность для карты
-        self.surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-        
         # Настройки генерации
         self.min_province_size = 4
         self.max_province_size = 8
@@ -46,11 +43,14 @@ class MapSystem:
         
         # Настройки ресурсов
         self.resource_clusters = {
-            ResourceType.GOLD: {'min_size': 1, 'chance': 0.15},
+            ResourceType.GOLD: {'min_size': 1, 'chance': 0.15},   # Было GOLD_MINE
             ResourceType.STONE: {'min_size': 2, 'chance': 0.25},
             ResourceType.WOOD: {'min_size': 4, 'chance': 0.35},
-            ResourceType.FOOD: {'min_size': 1, 'chance': 1.0}  # Луга
+            ResourceType.FOOD: {'min_size': 1, 'chance': 1.0}     # Луга
         }
+        
+        # Создаем поверхность для карты
+        self.surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
 
     def update(self, world: GameWorld) -> None:
         """
@@ -221,9 +221,9 @@ class MapSystem:
             world: Игровой мир
         """
         # Очищаем поверхность
-        self.surface.fill(COLORS['background'])
+        self.surface.fill(COLORS['water'])  # Заполняем все водой
         
-        # Отрисовываем сетку
+        # 1. Сначала рисуем все клетки и их базовую сетку
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
                 rect = pygame.Rect(
@@ -233,74 +233,59 @@ class MapSystem:
                     TILE_SIZE
                 )
                 
-                # Определяем цвет клетки
-                if self.grid[y, x] == 1:
-                    # Суша
-                    color = COLORS['land']
-                else:
-                    # Вода
-                    color = COLORS['water']
-                
-                # Отрисовываем клетку
-                pygame.draw.rect(self.surface, color, rect)
-                pygame.draw.rect(self.surface, COLORS['grid_lines'], rect, 1)
-        
-        # Отрисовываем провинции
-        for province_id, cells in self.provinces.items():
-            # Получаем сущность провинции
-            province_entities = [
-                (entity_id, world.get_component(entity_id, ProvinceInfoComponent))
-                for entity_id in world.get_entities_with_component(ProvinceInfoComponent)
-            ]
-            
-            for entity_id, province_info in province_entities:
-                if province_info and province_info.cells == cells:
-                    transform = world.get_component(entity_id, TransformComponent)
-                    renderable = world.get_component(entity_id, RenderableComponent)
+                if self.grid[y, x] == 1:  # Если это суша
+                    # Получаем тип ресурса для клетки
+                    resource_type = self.resources.get((x, y))
                     
-                    if transform and renderable:
-                        # Отрисовываем каждую клетку провинции
-                        for cell_x, cell_y in cells:
-                            rect = pygame.Rect(
-                                cell_x * TILE_SIZE,
-                                cell_y * TILE_SIZE,
-                                TILE_SIZE,
-                                TILE_SIZE
-                            )
-                            
-                            # Заливка провинции
-                            pygame.draw.rect(
-                                self.surface,
-                                renderable.color + (100,),  # Полупрозрачный цвет
-                                rect
-                            )
+                    # Определяем основной цвет клетки и цвет её сетки
+                    if resource_type:
+                        # Получаем цвета из конфига на основе типа ресурса
+                        resource_name = resource_type.value  # получаем строковое значение из enum (wood, gold, stone, food)
+                        base_color = COLORS[resource_name]
+                        grid_color = COLORS[f'{resource_name}_grid']
+                    else:  # По умолчанию - луга (FOOD)
+                        base_color = COLORS['food']
+                        grid_color = COLORS['food_grid']
+                        
+                    
+                    # Рисуем клетку
+                    pygame.draw.rect(self.surface, base_color, rect)
+                    # Рисуем сетку клетки
+                    pygame.draw.rect(self.surface, grid_color, rect, 1)
+                else:  # Если это вода
+                    # Рисуем сетку воды
+                    pygame.draw.rect(self.surface, COLORS['water_grid'], rect, 1)
         
-        # Отрисовываем ресурсы
-        for (x, y), resource_type in self.resources.items():
-            rect = pygame.Rect(
-                x * TILE_SIZE + TILE_SIZE // 4,
-                y * TILE_SIZE + TILE_SIZE // 4,
-                TILE_SIZE // 2,
-                TILE_SIZE // 2
-            )
-            
-            # Определяем цвет ресурса
-            resource_colors = {
-                ResourceType.GOLD: COLORS['gold'],
-                ResourceType.STONE: COLORS['stone'],
-                ResourceType.WOOD: COLORS['wood'],
-                ResourceType.FOOD: COLORS['food']
-            }
-            
-            color = resource_colors.get(resource_type, COLORS['text'])
-            
-            # Отрисовываем индикатор ресурса
-            pygame.draw.circle(
-                self.surface,
-                color,
-                rect.center,
-                TILE_SIZE // 4
-            )
+        # 2. Затем рисуем границу острова
+        # Проходим по всем клеткам и ищем границу между сушей и водой
+        for y in range(GRID_HEIGHT):
+            for x in range(GRID_WIDTH):
+                if self.grid[y, x] == 1:  # Если это суша
+                    # Проверяем соседние клетки
+                    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)]:
+                        new_x, new_y = x + dx, y + dy
+                        # Если сосед - вода или за пределами карты
+                        if (new_x < 0 or new_x >= GRID_WIDTH or 
+                            new_y < 0 or new_y >= GRID_HEIGHT or 
+                            self.grid[new_y, new_x] == 0):
+                            # Рисуем часть границы острова
+                            start_pos = (x * TILE_SIZE, y * TILE_SIZE)
+                            if dx == 0 and dy == 1:  # Нижняя граница
+                                pygame.draw.line(self.surface, (0, 0, 0), 
+                                            (start_pos[0], start_pos[1] + TILE_SIZE),
+                                            (start_pos[0] + TILE_SIZE, start_pos[1] + TILE_SIZE), 3)
+                            elif dx == 0 and dy == -1:  # Верхняя граница
+                                pygame.draw.line(self.surface, (0, 0, 0),
+                                            start_pos,
+                                            (start_pos[0] + TILE_SIZE, start_pos[1]), 3)
+                            elif dx == 1 and dy == 0:  # Правая граница
+                                pygame.draw.line(self.surface, (0, 0, 0),
+                                            (start_pos[0] + TILE_SIZE, start_pos[1]),
+                                            (start_pos[0] + TILE_SIZE, start_pos[1] + TILE_SIZE), 3)
+                            elif dx == -1 and dy == 0:  # Левая граница
+                                pygame.draw.line(self.surface, (0, 0, 0),
+                                            start_pos,
+                                            (start_pos[0], start_pos[1] + TILE_SIZE), 3)
 
     def get_surface(self) -> pygame.Surface:
         """

@@ -181,14 +181,18 @@ class UISystem:
         Args:
             world: Игровой мир
         """
-        # Панель ресурсов
-        self._render_resource_panel()
+        # Отрисовываем подсказки управления
+        hints = [
+            "ESC - Вернуться в меню",
+            "R - Создать новую карту"
+        ]
         
-        # Информация о ходе
-        turn_text = f"Ход: {self.current_turn}"
-        turn_surface = self.info_font.render(turn_text, True, COLORS['text'])
-        turn_rect = turn_surface.get_rect(topright=(SCREEN_WIDTH - 10, 10))
-        self.ui_layer.blit(turn_surface, turn_rect)
+        y_offset = 10
+        for hint in hints:
+            hint_surface = self.info_font.render(hint, True, COLORS['text'])
+            hint_rect = hint_surface.get_rect(topright=(SCREEN_WIDTH - 10, y_offset))
+            self.ui_layer.blit(hint_surface, hint_rect)
+            y_offset += 25
     
     def _render_pause_menu(self) -> None:
         """Отрисовка меню паузы."""

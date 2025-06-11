@@ -41,6 +41,9 @@ class Engine:
         self.state = GameState.MENU
         self.running = True
         
+        # Фон игры
+        self.background_color = (30, 40, 50)  # Темно-синий фон вместо черного
+        
         # Для подсчета FPS
         self.fps_font = pygame.font.Font(None, 24)
         self.fps_counter: Optional[pygame.Surface] = None
@@ -77,17 +80,28 @@ class Engine:
     
     def _handle_events(self) -> None:
         """Обработка событий."""
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
+        for pygame_event in pygame.event.get():
+            if pygame_event.type == pygame.QUIT:
                 self.running = False
-            else:
-                # Передаем события в систему событий
-                self.event_system.handle_pygame_event(event)
-    
+            elif pygame_event.type == pygame.KEYDOWN:
+                if pygame_event.key == pygame.K_ESCAPE:
+                    # Переход в главное меню
+                    if self.state == GameState.GAME:
+                        self.state = GameState.MENU
+                elif pygame_event.key == pygame.K_r and self.state == GameState.GAME:
+                    # Генерация новой карты
+                    self.map_system.map_generated = False
+                    self.map_system.update(self.world)
+            
+            # Передаем событие в систему событий
+            self.event_system.handle_pygame_event(pygame_event)
+
     def _handle_start_game(self, _: Dict) -> None:
         """Обработчик начала игры."""
         self.state = GameState.GAME
-    
+        # Сбрасываем генерацию карты при новой игре
+        self.map_system.map_generated = False
+        
     def _handle_open_settings(self, _: Dict) -> None:
         """Обработчик открытия настроек."""
         pass  # TODO: Реализовать окно настроек
@@ -117,17 +131,22 @@ class Engine:
             )
     
     def _render(self) -> None:
-        """Отрисовка игры."""
-        # Очищаем экран
-        self.screen.fill(COLORS['background'])
-        
-        # Отрисовываем системы
-        self.map_system.render(self.world)
-        self.ui_system.render(self.world, self.state)
-        
-        # Отображаем FPS если включен режим отладки
-        if DEBUG['show_fps'] and self.fps_counter:
-            self.screen.blit(self.fps_counter, (10, 10))
+            """Отрисовка игры."""
+            # Очищаем экран
+            self.screen.fill(self.background_color)
+            
+            if self.state == GameState.GAME:
+                # Отрисовываем карту только в игровом состоянии
+                self.map_system.render(self.world)
+                self.screen.blit(self.map_system.get_surface(), (0, 0))
+            
+            # Отрисовываем UI поверх всего
+            self.ui_system.render(self.world, self.state)
+            
+            # Отображаем FPS если включен режим отладки
+            if DEBUG['show_fps'] and self.fps_counter:
+                self.screen.blit(self.fps_counter, (10, 10))
+
     
     def cleanup(self) -> None:
         """Освобождение ресурсов."""

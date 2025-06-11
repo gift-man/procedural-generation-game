@@ -1,26 +1,13 @@
 """Система обработки событий."""
-from typing import Dict, Callable, List
+from typing import Dict, List, Callable, Any
 import pygame
 
 class EventSystem:
-    """
-    Система обработки событий.
-    Позволяет подписываться на события и обрабатывать их.
-    """
+    """Система обработки игровых событий."""
     
     def __init__(self):
         """Инициализация системы событий."""
-        # Словарь подписчиков на события
-        # event_type -> list of callbacks
         self._subscribers: Dict[str, List[Callable]] = {}
-        
-        # Маппинг pygame событий в наши события
-        self._pygame_event_mapping = {
-            pygame.MOUSEMOTION: self._handle_mouse_motion,
-            pygame.MOUSEBUTTONDOWN: self._handle_mouse_click,
-            pygame.KEYDOWN: self._handle_key_down,
-            pygame.KEYUP: self._handle_key_up
-        }
     
     def subscribe(self, event_type: str, callback: Callable) -> None:
         """
@@ -28,7 +15,7 @@ class EventSystem:
         
         Args:
             event_type: Тип события
-            callback: Функция обработчик
+            callback: Функция обратного вызова
         """
         if event_type not in self._subscribers:
             self._subscribers[event_type] = []
@@ -40,14 +27,16 @@ class EventSystem:
         
         Args:
             event_type: Тип события
-            callback: Функция обработчик
+            callback: Функция обратного вызова
         """
         if event_type in self._subscribers:
             self._subscribers[event_type].remove(callback)
+            if not self._subscribers[event_type]:
+                del self._subscribers[event_type]
     
-    def emit(self, event_type: str, event_data: Dict) -> None:
+    def emit(self, event_type: str, event_data: Dict[str, Any]) -> None:
         """
-        Вызов события.
+        Генерация события.
         
         Args:
             event_type: Тип события
@@ -57,73 +46,46 @@ class EventSystem:
             for callback in self._subscribers[event_type]:
                 callback(event_data)
     
-    def handle_pygame_event(self, event: pygame.event.Event) -> None:
+    def handle_pygame_event(self, pygame_event: pygame.event.Event) -> None:
         """
-        Обработка pygame события.
+        Обработка событий Pygame.
         
         Args:
-            event: Событие pygame
+            pygame_event: Событие Pygame
         """
-        # Проверяем, есть ли обработчик для данного типа события
-        if event.type in self._pygame_event_mapping:
-            self._pygame_event_mapping[event.type](event)
-    
-    def _handle_mouse_motion(self, event: pygame.event.Event) -> None:
-        """
-        Обработка движения мыши.
+        # Обработка движения мыши
+        if pygame_event.type == pygame.MOUSEMOTION:
+            self.emit('mouse_motion', {'pos': pygame_event.pos})
         
-        Args:
-            event: Событие pygame
-        """
-        self.emit('mouse_motion', {
-            'pos': event.pos,
-            'rel': event.rel if hasattr(event, 'rel') else (0, 0),
-            'buttons': event.buttons if hasattr(event, 'buttons') else (0, 0, 0)
-        })
-    
-    def _handle_mouse_click(self, event: pygame.event.Event) -> None:
-        """
-        Обработка клика мыши.
+        # Обработка кликов мыши
+        elif pygame_event.type == pygame.MOUSEBUTTONDOWN:
+            event_data = {
+                'pos': pygame_event.pos,
+                'button': pygame_event.button
+            }
+            self.emit('mouse_click', event_data)
         
-        Args:
-            event: Событие pygame
-        """
-        self.emit('mouse_click', {
-            'pos': event.pos,
-            'button': event.button,
-            'touch': event.touch if hasattr(event, 'touch') else False
-        })
-    
-    def _handle_key_down(self, event: pygame.event.Event) -> None:
-        """
-        Обработка нажатия клавиши.
+        # Обработка отпускания кнопок мыши
+        elif pygame_event.type == pygame.MOUSEBUTTONUP:
+            event_data = {
+                'pos': pygame_event.pos,
+                'button': pygame_event.button
+            }
+            self.emit('mouse_up', event_data)
         
-        Args:
-            event: Событие pygame
-        """
-        self.emit('key_down', {
-            'key': event.key,
-            'mod': event.mod,
-            'unicode': event.unicode if hasattr(event, 'unicode') else '',
-            'scancode': event.scancode if hasattr(event, 'scancode') else 0
-        })
+        # Обработка нажатий клавиш
+        elif pygame_event.type == pygame.KEYDOWN:
+            event_data = {
+                'key': pygame_event.key,
+                'mod': pygame_event.mod,
+                'unicode': pygame_event.unicode
+            }
+            self.emit('key_down', event_data)
         
-        # Специальные события для часто используемых клавиш
-        if event.key == pygame.K_ESCAPE:
-            self.emit('escape_pressed', {})
-        elif event.key == pygame.K_RETURN:
-            self.emit('enter_pressed', {})
-        elif event.key == pygame.K_SPACE:
-            self.emit('space_pressed', {})
-    
-    def _handle_key_up(self, event: pygame.event.Event) -> None:
-        """
-        Обработка отпускания клавиши.
-        
-        Args:
-            event: Событие pygame
-        """
-        self.emit('key_up', {
-            'key': event.key,
-            'mod': event.mod
-        })
+        # Обработка отпускания клавиш
+        elif pygame_event.type == pygame.KEYUP:
+            event_data = {
+                'key': pygame_event.key,
+                'mod': pygame_event.mod
+            }
+            self.emit('key_up', event_data)

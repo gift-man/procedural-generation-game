@@ -4,10 +4,10 @@ from typing import Dict
 
 class ResourceType(Enum):
     """Типы ресурсов."""
-    GOLD = "gold"
-    STONE = "stone"
-    WOOD = "wood"
-    FOOD = "food"
+    FOOD = "food"     # Еда (луга)
+    WOOD = "wood"     # Дерево (лес)
+    STONE = "stone"   # Камень
+    GOLD = "gold"     # Золото
 
 class ResourceComponent:
     """Компонент для хранения ресурсов."""
