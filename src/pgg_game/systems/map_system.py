@@ -15,6 +15,11 @@ except ImportError:
     print("pip install numpy>=1.24.0")
     sys.exit(1)
 
+from ..components.province_info import ProvinceInfoComponent
+from ..components.transform import TransformComponent
+from ..components.renderable import RenderableComponent
+from ..config import COLORS, RENDER_LAYERS
+from ..world.game_world import GameWorld
 from ..world.generators.province_settings import ProvinceGenerationConfig
 from ..world.province_manager import ProvinceManager
 from ..world.game_world import GameWorld
@@ -712,43 +717,43 @@ class MapSystem:
             free_neighbors_norm * weights['border_length']
         )
 
-def _verify_generation_quality(self, config: ProvinceGenerationConfig) -> bool:
-    """
-    Проверяет качество сгенерированных провинций.
-    
-    Args:
-        config: Настройки генерации
+    def _verify_generation_quality(self, config: ProvinceGenerationConfig) -> bool:
+        """
+        Проверяет качество сгенерированных провинций.
         
-    Returns:
-        bool: True если качество приемлемо
-    """
-    # Проверяем количество провинций
-    if len(self.province_manager.provinces) < config.min_province_count:  # Изменено с min_province_count
-        return False
-        
-    # Проверяем размеры провинций
-    for province in self.province_manager.provinces.values():
-        if len(province.cells) < config.min_province_size:
-            return False
-        if len(province.cells) > config.max_province_size:
+        Args:
+            config: Настройки генерации
+            
+        Returns:
+            bool: True если качество приемлемо
+        """
+        # Проверяем количество провинций
+        if len(self.province_manager.provinces) < config.min_province_count:  # Изменено с min_province_count
             return False
             
-    # Проверяем связность провинций
-    for province_id, province in self.province_manager.provinces.items():
-        if not self._check_province_connectivity(province_id):
-            return False
-            
-    # Проверяем отсутствие плюсовых пересечений
-    if config.check_plus_intersection:
-        for y in range(GRID_HEIGHT):
-            for x in range(GRID_WIDTH):
-                cell = (x, y)
-                if cell in self.province_manager.cell_to_province:
-                    province_id = self.province_manager.cell_to_province[cell]
-                    if self.province_manager._would_create_plus_intersection(province_id, cell):
-                        return False
-                        
-    return True
+        # Проверяем размеры провинций
+        for province in self.province_manager.provinces.values():
+            if len(province.cells) < config.min_province_size:
+                return False
+            if len(province.cells) > config.max_province_size:
+                return False
+                
+        # Проверяем связность провинций
+        for province_id, province in self.province_manager.provinces.items():
+            if not self._check_province_connectivity(province_id):
+                return False
+                
+        # Проверяем отсутствие плюсовых пересечений
+        if config.check_plus_intersection:
+            for y in range(GRID_HEIGHT):
+                for x in range(GRID_WIDTH):
+                    cell = (x, y)
+                    if cell in self.province_manager.cell_to_province:
+                        province_id = self.province_manager.cell_to_province[cell]
+                        if self.province_manager._would_create_plus_intersection(province_id, cell):
+                            return False
+                            
+        return True
 
     def _try_generate_provinces(self, config: ProvinceGenerationConfig) -> bool:
         """Пытается сгенерировать провинции."""
