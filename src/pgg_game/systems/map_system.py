@@ -1094,4 +1094,30 @@ class MapSystem:
                 if not has_neighbor:
                     return False
         
-        return True            
+        return True         
+    def _get_connected_cells(self, start: Tuple[int, int], cells: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
+        """
+        Возвращает все связанные клетки из данного множества, начиная с заданной.
+        
+        Args:
+            start: Начальная клетка (x, y)
+            cells: Множество всех клеток
+            
+        Returns:
+            Set[Tuple[int, int]]: Множество всех достижимых клеток
+        """
+        if not cells:
+            return set()
+            
+        visited = {start}
+        queue = deque([start])
+        
+        while queue:
+            x, y = queue.popleft()
+            for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:  # Только прямые соседи
+                neighbor = (x + dx, y + dy)
+                if neighbor in cells and neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+                    
+        return visited   
