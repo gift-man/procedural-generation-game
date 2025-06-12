@@ -414,9 +414,23 @@ class MapSystem:
                             
     def generate_provinces(self) -> bool:
         """Генерирует провинции на карте."""
-        max_attempts = 5
+        # Подсчитываем общее количество клеток суши
+        land_count = sum(1 for y in range(GRID_HEIGHT) for x in range(GRID_WIDTH) 
+                        if self.grid[y, x] == 1)
+        
+        # Проверяем, что острова достаточного размера
+        min_total_size = (self.province_manager.config.min_province_count * 
+                        self.province_manager.config.min_province_size)
+        
+        if land_count < min_total_size:
+            print(f"Остров слишком мал для генерации провинций " 
+                f"(нужно {min_total_size}, есть {land_count})")
+            return False
+        
+        # Пытаемся сгенерировать провинции
+        max_attempts = self.province_manager.config.max_generation_attempts
         for attempt in range(max_attempts):
-            if self._try_generate_provinces(ProvinceGenerationConfig()):
+            if self._try_generate_provinces(self.province_manager.config):
                 return True
         return False
 
@@ -646,6 +660,13 @@ class MapSystem:
         """
         x, y = cell
         
+        # Проверяем, что клетка на карте
+        if not (0 <= x < GRID_WIDTH and 0 <= y < GRID_HEIGHT):
+            return float('-inf')
+        
+        if self.grid[y, x] != 1:  # Проверяем что это суша
+            return float('-inf')
+            
         # Подсчёт соседей
         neighbors = 0
         diagonals = 0
@@ -653,11 +674,11 @@ class MapSystem:
             check_cell = (x + dx, y + dy)
             if check_cell in province_cells:
                 if abs(dx) + abs(dy) == 1:  # Прямые соседи
-                    neighbors += 1
+                    neighbors += 1.5  # Увеличиваем вес прямых соседей
                 else:  # Диагональные соседи
                     diagonals += 0.5
                     
-        neighbor_score = neighbors + diagonals
+        neighbor_score = (neighbors + diagonals) / 6.0  # Нормализация
         
         # Вычисляем центр провинции и расстояние до него
         if province_cells:
@@ -670,16 +691,19 @@ class MapSystem:
         else:
             distance_score = 1.0
             
-        # Проверка компактности (сколько клеток вокруг свободно)
-        empty_neighbors = 0
+        # Проверка компактности (количество пустых клеток вокруг)
+        empty_adjacent = 0
         for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-            check_cell = (x + dx, y + dy)
-            if check_cell not in province_cells:
-                empty_neighbors += 1
+            check_x, check_y = x + dx, y + dy
+            if (0 <= check_x < GRID_WIDTH and 
+                0 <= check_y < GRID_HEIGHT and 
+                self.grid[check_y, check_x] == 1 and
+                (check_x, check_y) not in province_cells):
+                empty_adjacent += 1
                 
-        compactness_score = 1.0 - (empty_neighbors / 4.0)
+        compactness_score = 1.0 - (empty_adjacent / 4.0)  # Нормализация
         
-        # Итоговая оценка (веса можно настраивать)
+        # Итоговая оценка с весами из конфигурации
         weights = self.province_manager.config.weights
         return (
             neighbor_score * weights['neighbor_count'] +

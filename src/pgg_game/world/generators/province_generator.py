@@ -176,10 +176,67 @@ class ProvinceGenerator:
         """Исправляет связность провинции."""
         if not province.cells:
             return
-            
+
         # Находим самый большой связный компонент
         start = next(iter(province.cells))
-        main_component = self._get_connected_cells(start, province.cells)
+        largest_component = self._get_connected_cells(start, province.cells)
         
-        # Удаляем отсоединенные клетки
-        province.cells = main_component
+        while len(province.cells) > len(largest_component):
+            # Находим клетки в других компонентах
+            disconnected = province.cells - largest_component
+            
+            # Пытаемся соединить компоненты
+            best_connection = None
+            best_score = float('-inf')
+            
+            for cell1 in largest_component:
+                for cell2 in disconnected:
+                    # Находим путь между клетками
+                    path = self._find_connecting_path(cell1, cell2, province.cells)
+                    if path:
+                        # Оцениваем качество соединения
+                        score = -len(path)  # Предпочитаем короткие пути
+                        score += sum(self._evaluate_cell_score((x, y), largest_component)
+                                for x, y in path)
+                        
+                        if score > best_score:
+                            best_score = score
+                            best_connection = path
+            
+            if best_connection:
+                # Добавляем соединяющий путь
+                largest_component.update(best_connection)
+                province.cells.update(best_connection)
+            else:
+                # Если не можем соединить, удаляем отсоединенную часть
+                province.cells = largest_component
+                break
+
+    def _find_connecting_path(self, start: Tuple[int, int], end: Tuple[int, int], 
+                            blocked: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
+        """Находит путь между двумя клетками, избегая занятых клеток."""
+        if start == end:
+            return {start}
+
+        visited = {start}
+        queue = deque([(start, {start})])
+        
+        while queue:
+            current, path = queue.popleft()
+            x, y = current
+            
+            for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                next_pos = (x + dx, y + dy)
+                if (next_pos not in visited and 
+                    next_pos not in blocked and
+                    0 <= next_pos[0] < GRID_WIDTH and 
+                    0 <= next_pos[1] < GRID_HEIGHT):
+                    
+                    new_path = path | {next_pos}
+                    if next_pos == end:
+                        return new_path
+                        
+                    visited.add(next_pos)
+                    queue.append((next_pos, new_path))
+        
+        return set()
