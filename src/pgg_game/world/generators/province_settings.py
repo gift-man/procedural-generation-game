@@ -34,3 +34,11 @@ class ProvinceGenerationConfig:
         'center_distance': 0.2,   # Вес расстояния от центра провинции
         'border_length': 0.1      # Вес длины общей границы
     })
+    
+    # Параметры качества генерации
+    quality_thresholds: Dict[str, float] = field(default_factory=lambda: {
+        'min_compactness': 0.5,     # Минимальная компактность провинции
+        'max_border_ratio': 0.6,     # Максимальное отношение границы к площади
+        'min_province_ratio': 0.8,   # Минимальное отношение размера к целевому
+        'max_size_variance': 0.3     # Максимальное отклонение размеров провинций
+    })

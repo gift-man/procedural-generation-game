@@ -9,16 +9,17 @@ class ProvinceManager:
     """Управляет провинциями на карте."""
         
     def __init__(self, config: Optional[ProvinceGenerationConfig] = None):
-        """
-        Инициализация менеджера провинций.
-        
-        Args:
-            config: Настройки генерации провинций
-        """
-        self.provinces: Dict[int, Set[Tuple[int, int]]] = {}
-        self.cell_to_province: Dict[Tuple[int, int], int] = {}
-        self.next_province_id = 0
-        self.config = config or ProvinceGenerationConfig()
+            """
+            Инициализация менеджера провинций.
+            
+            Args:
+                config: Настройки генерации провинций
+            """
+            # Исправляем тип с Set на ProvinceData
+            self.provinces: Dict[int, ProvinceData] = {}
+            self.cell_to_province: Dict[Tuple[int, int], int] = {}
+            self.next_province_id = 0
+            self.config = config or ProvinceGenerationConfig()
 
     def get_ideal_province_size(self) -> int:
         """
@@ -39,55 +40,58 @@ class ProvinceManager:
         return 6
 
     def create_province(self, target_size: Optional[int] = None) -> int:
-        """
-        Создает новую провинцию.
-        
-        Args:
-            target_size: Желаемый размер провинции
+            """
+            Создает новую провинцию.
             
-        Returns:
-            int: ID новой провинции
-        """
-        province_id = self.next_province_id
-        self.next_province_id += 1
-        self.provinces[province_id] = ProvinceData(target_size=target_size)
-        return province_id
+            Args:
+                target_size: Желаемый размер провинции
+                
+            Returns:
+                int: ID новой провинции
+            """
+            province_id = self.next_province_id
+            self.next_province_id += 1
+            self.provinces[province_id] = ProvinceData(target_size=target_size)
+            return province_id
     
     def add_cell_to_province(self, province_id: int, cell: Tuple[int, int]) -> bool:
-        """
-        Добавляет клетку в провинцию.
-        
-        Args:
-            province_id: ID провинции
-            cell: Координаты клетки (x, y)
+            """
+            Добавляет клетку в провинцию.
             
-        Returns:
-            bool: True если клетка успешно добавлена
-        """
-        if cell in self.cell_to_province:
-            return False
+            Args:
+                province_id: ID провинции
+                cell: Координаты клетки (x, y)
+                
+            Returns:
+                bool: True если клетка успешно добавлена
+            """
+            if cell in self.cell_to_province:
+                return False
+                
+            province = self.provinces[province_id]
             
-        province = self.provinces[province_id]
-        
-        # Проверяем целевой размер
-        if (province.target_size is not None and 
-            len(province.cells) >= province.target_size):
-            return False
-            
-        # Проверяем создание плюсового пересечения
-        if self.config.check_plus_intersection:
-            if self._would_create_plus_intersection(province_id, cell):
+            # Проверяем целевой размер
+            if (province.target_size is not None and 
+                len(province.cells) >= province.target_size):
+                return False
+                
+            # Проверяем создание плюсового пересечения
+            if self.config.check_plus_intersection:
+                if self._would_create_plus_intersection(province_id, cell):
+                    return False
+                
+            # Проверка связности для существующей провинции
+            if not self._would_maintain_connectivity(province_id, cell):
                 return False
             
-        # Проверка связности для существующей провинции
-        if not self._would_maintain_connectivity(province_id, cell):
-            return False
-        
-        # Добавляем клетку
-        province.cells.add(cell)
-        self.cell_to_province[cell] = province_id
-        return True
-
+            # Добавляем клетку
+            province.cells.add(cell)
+            self.cell_to_province[cell] = province_id
+            
+            # Обновляем метрики провинции
+            province.update_metrics()
+            return True
+    
     def _would_create_plus_intersection(self, province_id: int, cell: Tuple[int, int]) -> bool:
         """Проверяет, создаст ли добавление клетки плюсовое пересечение."""
         x, y = cell
