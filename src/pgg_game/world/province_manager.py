@@ -1,9 +1,9 @@
 """Менеджер провинций."""
 import random
 from typing import Set, Dict, Tuple, Optional, List
-from ..components.province import ProvinceData
 from ..world.generators.province_settings import ProvinceGenerationConfig
 from collections import deque
+from ..components.province import ProvinceData, Province  # Добавляем импорт Province
 
 class ProvinceManager:
     """Управляет провинциями на карте."""
@@ -31,8 +31,8 @@ class ProvinceManager:
             Set[Tuple[int, int]]: Множество клеток провинции
         """
         if province_id in self.provinces:
-            return self.provinces[province_id].cells
-        return set()        
+            return set(self.provinces[province_id].cells)
+        return set()
     
     def get_provinces(self) -> List[Province]:
         """
@@ -41,8 +41,12 @@ class ProvinceManager:
         Returns:
             List[Province]: Список провинций
         """
-        return [Province(id=pid, cells=data.cells) 
-                for pid, data in self.provinces.items()]
+        result = []
+        for pid, data in self.provinces.items():
+            province = Province(id=pid, cells=set(data.cells))
+            province.province_data = data
+            result.append(province)
+        return result
     
     def get_ideal_province_size(self) -> int:
         """
@@ -63,19 +67,19 @@ class ProvinceManager:
         return 6
 
     def create_province(self, target_size: Optional[int] = None) -> int:
-            """
-            Создает новую провинцию.
+        """
+        Создает новую провинцию.
+        
+        Args:
+            target_size: Желаемый размер провинции
             
-            Args:
-                target_size: Желаемый размер провинции
-                
-            Returns:
-                int: ID новой провинции
-            """
-            province_id = self.next_province_id
-            self.next_province_id += 1
-            self.provinces[province_id] = ProvinceData(target_size=target_size)
-            return province_id
+        Returns:
+            int: ID новой провинции
+        """
+        province_id = self.next_province_id
+        self.next_province_id += 1
+        self.provinces[province_id] = ProvinceData(target_size=target_size)
+        return province_id
     
     def add_cell_to_province(self, province_id: int, cell: Tuple[int, int]) -> bool:
             """

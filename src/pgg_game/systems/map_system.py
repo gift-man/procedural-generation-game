@@ -808,11 +808,10 @@ class MapSystem:
                 continue
                 
             # Вычисляем размеры и позицию провинции
-            cells = province.cells
-            min_x = min(x for x, _ in cells)
-            min_y = min(y for _, y in cells)
-            max_x = max(x for x, _ in cells)
-            max_y = max(y for _, y in cells)
+            min_x = min(x for x, _ in province.cells)
+            min_y = min(y for _, y in province.cells)
+            max_x = max(x for x, _ in province.cells)
+            max_y = max(y for _, y in province.cells)
             width = max_x - min_x + 1
             height = max_y - min_y + 1
             
@@ -844,5 +843,5 @@ class MapSystem:
             
             # Создаем информацию о провинции
             province_info = ProvinceInfoComponent(f"Province {province.id}")
-            province_info.cells = province.cells
+            province_info.cells = set(province.cells)  # Создаем копию множества клеток
             world.add_component(entity_id, province_info)

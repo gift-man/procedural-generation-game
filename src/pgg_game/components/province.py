@@ -9,6 +9,7 @@ class Province:
     """Базовый класс провинции."""
     id: int
     cells: Set[Tuple[int, int]]
+    province_data: Optional['ProvinceData'] = None
 
 @dataclass
 class ProvinceData:
@@ -22,6 +23,9 @@ class ProvinceData:
     center: Optional[Tuple[int, int]] = None  # Центр провинции
     compactness: float = 0.0  # Показатель компактности формы
     border_length: int = 0    # Длина границы провинции
+    
+    def __iter__(self):
+        return iter(self.cells)
     
     def update_metrics(self) -> None:
         """Обновляет метрики провинции."""
