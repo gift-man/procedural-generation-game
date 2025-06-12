@@ -6,6 +6,7 @@ from typing import List, Set, Tuple, Dict, Optional
 from collections import deque  # Добавляем импорт deque
 import pygame
 import sys
+import math
 
 try:
     import numpy as np
@@ -632,29 +633,59 @@ class MapSystem:
                 
         return False
     
-    def _evaluate_cell(self, cell: Tuple[int, int], 
-                        province_cells: Set[Tuple[int, int]]) -> float:
-            """Оценивает качество добавления клетки к провинции."""
-            x, y = cell
+    def _evaluate_cell_score(self, cell: Tuple[int, int], province_cells: Set[Tuple[int, int]]) -> float:
+        """
+        Оценивает пригодность клетки для добавления в провинцию.
+        
+        Args:
+            cell: Оцениваемая клетка (x, y)
+            province_cells: Множество клеток текущей провинции
             
-            # Считаем количество соседей
-            neighbors = sum(1 for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]
-                        if (x + dx, y + dy) in province_cells)
-                        
-            # Вычисляем центр текущей провинции
-            if province_cells:
-                center_x = sum(x for x, _ in province_cells) / len(province_cells)
-                center_y = sum(y for _, y in province_cells) / len(province_cells)
+        Returns:
+            float: Оценка пригодности клетки
+        """
+        x, y = cell
+        
+        # Подсчёт соседей
+        neighbors = 0
+        diagonals = 0
+        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)]:
+            check_cell = (x + dx, y + dy)
+            if check_cell in province_cells:
+                if abs(dx) + abs(dy) == 1:  # Прямые соседи
+                    neighbors += 1
+                else:  # Диагональные соседи
+                    diagonals += 0.5
+                    
+        neighbor_score = neighbors + diagonals
+        
+        # Вычисляем центр провинции и расстояние до него
+        if province_cells:
+            center_x = sum(x for x, _ in province_cells) / len(province_cells)
+            center_y = sum(y for _, y in province_cells) / len(province_cells)
+            dx = x - center_x
+            dy = y - center_y
+            distance = math.sqrt(dx * dx + dy * dy)
+            distance_score = 1.0 / (1.0 + distance)  # Нормализованное расстояние
+        else:
+            distance_score = 1.0
+            
+        # Проверка компактности (сколько клеток вокруг свободно)
+        empty_neighbors = 0
+        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+            check_cell = (x + dx, y + dy)
+            if check_cell not in province_cells:
+                empty_neighbors += 1
                 
-                # Расстояние до центра
-                dx = x - center_x
-                dy = y - center_y
-                center_dist = (dx * dx + dy * dy) ** 0.5
-            else:
-                center_dist = 0
-                
-            # Финальная оценка (больше соседей лучше, ближе к центру лучше)
-            return neighbors * 2.0 - center_dist * 0.5
+        compactness_score = 1.0 - (empty_neighbors / 4.0)
+        
+        # Итоговая оценка (веса можно настраивать)
+        weights = self.province_manager.config.weights
+        return (
+            neighbor_score * weights['neighbor_count'] +
+            distance_score * weights['center_distance'] +
+            compactness_score * weights['compactness']
+        )
     
     def _cleanup_failed_provinces(self) -> None:
         """Очищает неудачные провинции."""
@@ -729,7 +760,7 @@ class MapSystem:
         distance_to_center = ((x - center_x) ** 2 + (y - center_y) ** 2) ** 0.5
         
         # Потенциал роста
-        growth_potential = self._evaluate_growth_potential(x, y, land_cells)
+        growth_potential = self._evaluate_cell_score(x, y, land_cells)
         
         # Количество свободных соседей
         free_neighbors = sum(1 for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]
