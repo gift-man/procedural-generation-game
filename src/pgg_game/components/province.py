@@ -5,6 +5,12 @@ from dataclasses import dataclass, field
 from ..world.generators.province_settings import ProvinceGenerationConfig
 
 @dataclass
+class Province:
+    """Базовый класс провинции."""
+    id: int
+    cells: Set[Tuple[int, int]]
+
+@dataclass
 class ProvinceData:
     """Класс для хранения данных о провинции."""
     cells: Set[Tuple[int, int]] = field(default_factory=set)  # Клетки провинции

@@ -1,6 +1,6 @@
 """Менеджер провинций."""
 import random
-from typing import Set, Dict, Tuple, Optional
+from typing import Set, Dict, Tuple, Optional, List
 from ..components.province import ProvinceData
 from ..world.generators.province_settings import ProvinceGenerationConfig
 from collections import deque
@@ -9,18 +9,41 @@ class ProvinceManager:
     """Управляет провинциями на карте."""
         
     def __init__(self, config: Optional[ProvinceGenerationConfig] = None):
-            """
-            Инициализация менеджера провинций.
-            
-            Args:
-                config: Настройки генерации провинций
-            """
-            # Исправляем тип с Set на ProvinceData
-            self.provinces: Dict[int, ProvinceData] = {}
-            self.cell_to_province: Dict[Tuple[int, int], int] = {}
-            self.next_province_id = 0
-            self.config = config or ProvinceGenerationConfig()
+        """
+        Инициализация менеджера провинций.
+        
+        Args:
+            config: Настройки генерации провинций
+        """
+        self.provinces: Dict[int, ProvinceData] = {}
+        self.cell_to_province: Dict[Tuple[int, int], int] = {}
+        self.next_province_id = 0
+        self.config = config or ProvinceGenerationConfig()
 
+    def get_province_cells(self, province_id: int) -> Set[Tuple[int, int]]:
+        """
+        Возвращает клетки провинции.
+        
+        Args:
+            province_id: ID провинции
+            
+        Returns:
+            Set[Tuple[int, int]]: Множество клеток провинции
+        """
+        if province_id in self.provinces:
+            return self.provinces[province_id].cells
+        return set()        
+    
+    def get_provinces(self) -> List[Province]:
+        """
+        Возвращает список провинций.
+        
+        Returns:
+            List[Province]: Список провинций
+        """
+        return [Province(id=pid, cells=data.cells) 
+                for pid, data in self.provinces.items()]
+    
     def get_ideal_province_size(self) -> int:
         """
         Возвращает размер провинции на основе вероятностей из конфигурации.

@@ -797,20 +797,27 @@ class MapSystem:
           
     def _create_province_entities(self, world: GameWorld) -> None:
         """Создает сущности для провинций."""
-        for province_id, cells in self.provinces.items():
-            # Создаем сущность провинции
-            entity_id = world.create_entity()
+        if not hasattr(self, 'province_manager'):
+            return
             
-            # Вычисляем размеры и позицию провинции
-            if not cells:  # Пропускаем пустые провинции
+        # Получаем список провинций
+        provinces = self.province_manager.get_provinces()
+        
+        for province in provinces:
+            if not province.cells:  # Пропускаем пустые провинции
                 continue
                 
-            min_x = min(x for x, _ in cells) * TILE_SIZE
-            min_y = min(y for _, y in cells) * TILE_SIZE
-            max_x = max(x for x, _ in cells) * TILE_SIZE
-            max_y = max(y for _, y in cells) * TILE_SIZE
-            width = max_x - min_x + TILE_SIZE
-            height = max_y - min_y + TILE_SIZE
+            # Вычисляем размеры и позицию провинции
+            cells = province.cells
+            min_x = min(x for x, _ in cells)
+            min_y = min(y for _, y in cells)
+            max_x = max(x for x, _ in cells)
+            max_y = max(y for _, y in cells)
+            width = max_x - min_x + 1
+            height = max_y - min_y + 1
+            
+            # Создаем сущность провинции
+            entity_id = world.create_entity()
             
             # Добавляем компонент трансформации
             world.add_component(
@@ -831,20 +838,11 @@ class MapSystem:
                     alpha=255,
                     border_width=2,
                     border_color=COLORS['province_border'],
-                    layer=RENDER_LAYERS['provinces']  # Используем слой для провинций
+                    layer=RENDER_LAYERS['provinces']
                 )
             )
             
             # Создаем информацию о провинции
-            province_info = ProvinceInfoComponent(f"Province {province_id}")
-            cells_copy = cells.copy() if hasattr(cells, 'copy') else set(cells)
-            province_info.cells = cells_copy
+            province_info = ProvinceInfoComponent(f"Province {province.id}")
+            province_info.cells = province.cells
             world.add_component(entity_id, province_info)
-            
-            # Добавляем ресурсы
-            resource_component = ResourceComponent()
-            for x, y in cells:
-                resource_type = self.resources.get((x, y))
-                if resource_type:
-                    resource_component.add_resource(resource_type, 1)
-            world.add_component(entity_id, resource_component)
