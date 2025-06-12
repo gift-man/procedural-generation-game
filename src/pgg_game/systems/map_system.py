@@ -3,6 +3,7 @@
 """
 import random
 from typing import List, Set, Tuple, Dict, Optional
+from collections import deque  # Добавляем импорт deque
 import pygame
 import sys
 
@@ -368,78 +369,268 @@ class MapSystem:
                                         # Переходим к следующему штриху
                                         current_pos += dash_length + gap_length
                             
-    def generate_provinces(self) -> None:
-        """Генерирует провинции на карте."""
-        # Создаем конфигурацию и менеджер провинций
-        config = ProvinceGenerationConfig()
-        self.province_manager = ProvinceManager(config=config)  # Важно! Правильная передача config
+    def generate_provinces(self) -> bool:
+        """
+        Генерирует провинции на карте.
         
+        Returns:
+            bool: True если генерация успешна
+        """
+        config = ProvinceGenerationConfig()
+        
+        for attempt in range(config.max_generation_attempts):
+            print(f"Попытка генерации провинций {attempt + 1}/{config.max_generation_attempts}")
+            
+            if self._try_generate_provinces(config):
+                print("Генерация провинций успешна!")
+                return True
+                
+        print("Не удалось сгенерировать корректные провинции")
+        return False
+
+    def _try_generate_provinces(self, config: ProvinceGenerationConfig) -> bool:
+        """
+        Пытается сгенерировать провинции с заданной конфигурацией.
+        
+        Args:
+            config: Настройки генерации
+            
+        Returns:
+            bool: True если генерация успешна
+        """
         # Очищаем старые провинции
         self.provinces.clear()
         self.cell_to_province.clear()
+        self.province_manager = ProvinceManager(config=config)
         
         # Собираем все клетки суши
         land_cells = set()
+        total_land = 0
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
                 if self.grid[y, x] == 1:
                     land_cells.add((x, y))
+                    total_land += 1
+                    
+        initial_land_count = len(land_cells)
         
         # Основной цикл генерации провинций
         while land_cells:
-            # Определяем размер следующей провинции
-            target_size = self.province_manager.get_ideal_province_size()
+            if not self._try_create_province(land_cells, config):
+                return False
+                
+            # Проверяем критерии качества
+            if len(land_cells) / initial_land_count < (1 - config.min_total_coverage):
+                if len(self.province_manager.provinces) >= config.min_province_count:
+                    break
+                    
+        # Финальная проверка качества
+        return self._verify_generation_quality(config)
+
+    def _try_create_province(self, land_cells: Set[Tuple[int, int]], 
+                            config: ProvinceGenerationConfig) -> bool:
+        """
+        Пытается создать одну провинцию.
+        
+        Args:
+            land_cells: Доступные клетки суши
+            config: Настройки генерации
             
+        Returns:
+            bool: True если провинция создана успешно
+        """
+        target_size = self.province_manager.get_ideal_province_size()
+        
+        for _ in range(config.max_province_attempts):
             # Создаем новую провинцию
             province_id = self.province_manager.create_province(target_size)
             
             # Выбираем стартовую точку с наибольшим количеством соседей
-            best_start = None
-            best_neighbor_count = -1
-            
-            for cell in land_cells:
-                x, y = cell
-                neighbor_count = sum(1 for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]
-                                if (x + dx, y + dy) in land_cells)
+            best_start = self._find_best_start_point(land_cells)
+            if not best_start:
+                return False
                 
-                if neighbor_count > best_neighbor_count:
-                    best_neighbor_count = neighbor_count
-                    best_start = cell
+            # Пытаемся вырастить провинцию
+            if self._grow_province(province_id, best_start, target_size, land_cells):
+                return True
+                
+        return False
+
+    def _find_best_start_point(self, land_cells: Set[Tuple[int, int]]) -> Optional[Tuple[int, int]]:
+        """
+        Находит лучшую стартовую точку для новой провинции.
+        
+        Args:
+            land_cells: Доступные клетки суши
             
-            if best_start is None:
+        Returns:
+            Optional[Tuple[int, int]]: Координаты лучшей стартовой точки или None
+        """
+        best_start = None
+        best_score = -1
+        
+        for cell in land_cells:
+            x, y = cell
+            # Считаем количество соседей и проверяем возможность плюсового пересечения
+            neighbor_count = 0
+            has_plus = False
+            
+            for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                nx, ny = x + dx, y + dy
+                if (nx, ny) in land_cells:
+                    neighbor_count += 1
+                    
+                # Проверяем на потенциальное создание плюса
+                if (nx, ny) in self.province_manager.cell_to_province:
+                    opposite_x = x - dx
+                    opposite_y = y - dy
+                    if (opposite_x, opposite_y) in self.province_manager.cell_to_province:
+                        side_x = x + dy
+                        side_y = y - dx
+                        if (side_x, side_y) in self.province_manager.cell_to_province:
+                            has_plus = True
+                            break
+            
+            if not has_plus and neighbor_count > best_score:
+                best_score = neighbor_count
+                best_start = cell
+                
+        return best_start
+
+    def _grow_province(self, province_id: int, start: Tuple[int, int], 
+                    target_size: int, land_cells: Set[Tuple[int, int]]) -> bool:
+        """
+        Выращивает провинцию из стартовой точки.
+        
+        Args:
+            province_id: ID провинции
+            start: Стартовая точка
+            target_size: Целевой размер провинции
+            land_cells: Доступные клетки суши
+            
+        Returns:
+            bool: True если провинция выращена успешно
+        """
+        # Добавляем стартовую клетку
+        if not self.province_manager.add_cell_to_province(province_id, start):
+            return False
+            
+        land_cells.remove(start)
+        current_size = 1
+        
+        # Расширяем провинцию до целевого размера
+        while current_size < target_size and land_cells:
+            candidates = []
+            province_cells = self.province_manager.provinces[province_id].cells
+            
+            # Собираем все возможные соседние клетки
+            for cell in province_cells:
+                x, y = cell
+                for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                    neighbor = (x + dx, y + dy)
+                    if neighbor in land_cells:
+                        # Проверяем, не создаст ли добавление клетки плюс
+                        if not self.province_manager._would_create_plus_intersection(province_id, neighbor):
+                            candidates.append(neighbor)
+            
+            if not candidates:
+                # Если нет подходящих кандидатов и размер слишком мал - считаем провинцию неудачной
+                if current_size < self.province_manager.config.min_province_size:
+                    return False
                 break
                 
-            # Добавляем стартовую клетку
-            if self.province_manager.add_cell_to_province(province_id, best_start):
-                land_cells.remove(best_start)
+            # Выбираем лучшего кандидата (с наибольшим числом соседей из этой же провинции)
+            best_candidate = None
+            best_score = -1
             
-            # Расширяем провинцию до целевого размера
-            while (len(self.province_manager.provinces[province_id].cells) < target_size and 
-                land_cells):
-                candidates = []
-                province_cells = self.province_manager.provinces[province_id].cells
-                
-                # Собираем все возможные соседние клетки
-                for cell in province_cells:
-                    x, y = cell
-                    for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-                        neighbor = (x + dx, y + dy)
-                        if neighbor in land_cells:
-                            candidates.append(neighbor)
-                
-                if not candidates:
-                    break
+            for candidate in candidates:
+                x, y = candidate
+                score = 0
+                for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                    if (x + dx, y + dy) in province_cells:
+                        score += 1
+                if score > best_score:
+                    best_score = best_score
+                    best_candidate = candidate
                     
-                # Выбираем случайную клетку из кандидатов
-                next_cell = random.choice(candidates)
+            # Добавляем лучшего кандидата
+            if best_candidate and self.province_manager.add_cell_to_province(province_id, best_candidate):
+                land_cells.remove(best_candidate)
+                current_size += 1
+            else:
+                break
                 
-                # Пытаемся добавить клетку
-                if self.province_manager.add_cell_to_province(province_id, next_cell):
-                    land_cells.remove(next_cell)
+        return current_size >= self.province_manager.config.min_province_size
+
+    def _verify_generation_quality(self, config: ProvinceGenerationConfig) -> bool:
+        """
+        Проверяет качество сгенерированных провинций.
         
-        # Обновляем словари для отрисовки
-        self.provinces = {pid: prov.cells for pid, prov in self.province_manager.provinces.items()}
-        self.cell_to_province = self.province_manager.cell_to_province
+        Args:
+            config: Настройки генерации
+            
+        Returns:
+            bool: True если качество приемлемо
+        """
+        # Проверяем количество провинций
+        if len(self.province_manager.provinces) < config.min_province_count:
+            return False
+            
+        # Проверяем размеры провинций
+        for province in self.province_manager.provinces.values():
+            if len(province.cells) < config.min_province_size:
+                return False
+            if len(province.cells) > config.max_province_size:
+                return False
+                
+        # Проверяем связность провинций
+        for province_id, province in self.province_manager.provinces.items():
+            if not self._check_province_connectivity(province_id):
+                return False
+                
+        # Проверяем отсутствие плюсовых пересечений
+        if config.check_plus_intersection:
+            for y in range(GRID_HEIGHT):
+                for x in range(GRID_WIDTH):
+                    cell = (x, y)
+                    if cell in self.province_manager.cell_to_province:
+                        province_id = self.province_manager.cell_to_province[cell]
+                        if self.province_manager._would_create_plus_intersection(province_id, cell):
+                            return False
+                            
+        return True
+
+    def _check_province_connectivity(self, province_id: int) -> bool:
+        """
+        Проверяет связность провинции.
+        
+        Args:
+            province_id: ID провинции
+            
+        Returns:
+            bool: True если провинция связна
+        """
+        province = self.province_manager.provinces[province_id]
+        if not province.cells:
+            return True
+            
+        # Начинаем с первой клетки
+        start = next(iter(province.cells))
+        visited = {start}
+        queue = deque([start])
+        
+        # Обход в ширину
+        while queue:
+            x, y = queue.popleft()
+            for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                neighbor = (x + dx, y + dy)
+                if (neighbor in province.cells and 
+                    neighbor not in visited):
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+                    
+        # Все клетки должны быть достижимы
+        return len(visited) == len(province.cells)
 
 
     def get_surface(self) -> pygame.Surface:
