@@ -13,12 +13,30 @@ class ProvinceManager:
         Инициализация менеджера провинций.
         
         Args:
-            config: Настройки генерации
+            config: Настройки генерации провинций
         """
-        self.provinces: Dict[int, ProvinceData] = {}
+        self.provinces: Dict[int, Set[Tuple[int, int]]] = {}
         self.cell_to_province: Dict[Tuple[int, int], int] = {}
         self.next_province_id = 0
         self.config = config or ProvinceGenerationConfig()
+
+    def get_ideal_province_size(self) -> int:
+        """
+        Возвращает размер провинции на основе вероятностей из конфигурации.
+        
+        Returns:
+            int: Размер провинции от 4 до 8 клеток
+        """
+        rand = random.random()
+        cumulative = 0.0
+        
+        for size, prob in self.config.size_probabilities.items():
+            cumulative += prob
+            if rand <= cumulative:
+                return size
+                
+        # По умолчанию возвращаем средний размер
+        return 6
 
     def create_province(self, target_size: Optional[int] = None) -> int:
         """
@@ -98,23 +116,7 @@ class ProvinceManager:
                 return True
         return False
 
-    def get_ideal_province_size(self) -> int:
-        """
-        Возвращает случайный размер провинции по заданным вероятностям.
-        
-        Returns:
-            int: Размер провинции от 4 до 8 клеток
-        """
-        rand = random.random()
-        cumulative = 0.0
-        
-        for size, prob in self.config.size_probabilities.items():
-            cumulative += prob
-            if rand <= cumulative:
-                return size
-                
-        # По умолчанию возвращаем оптимальный размер
-        return 6
+
     def validate_province(self, province_id: int) -> bool:
         """
         Проверяет корректность провинции.
