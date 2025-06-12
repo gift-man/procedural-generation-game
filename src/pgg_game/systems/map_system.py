@@ -17,7 +17,7 @@ except ImportError:
     sys.exit(1)
 
 
-
+from ..world.generators.island_analyzer import IslandAnalyzer
 
 from ..config import COLORS, RENDER_LAYERS
 from ..world.generators.province_settings import ProvinceGenerationConfig
@@ -477,51 +477,62 @@ class MapSystem:
 
     def _try_generate_provinces(self, config: ProvinceGenerationConfig) -> bool:
         """Пытается сгенерировать провинции."""
+        # Анализируем остров
+        island_analyzer = IslandAnalyzer()
+        land_cells = {(x, y) for y in range(GRID_HEIGHT) 
+                    for x in range(GRID_WIDTH) if self.grid[y, x] == 1}
+        
+        try:
+            analysis = island_analyzer.analyze_island(land_cells)
+        except ValueError as e:
+            print(f"Ошибка анализа острова: {e}")
+            return False
+        
+        # Обновляем конфигурацию на основе анализа
+        config.max_province_count = analysis.recommended_provinces
+        config.min_province_count = max(3, config.max_province_count - 2)
+        config.size_probabilities = analysis.recommended_sizes
+        
         # Очищаем старые провинции
         self.provinces.clear()
         self.cell_to_province.clear()
         self.province_manager = ProvinceManager(config=config)
         
         # Собираем все клетки суши
-        land_cells = set()
-        for y in range(GRID_HEIGHT):
-            for x in range(GRID_WIDTH):
-                if self.grid[y, x] == 1:
-                    land_cells.add((x, y))
-                    
-        initial_land_count = len(land_cells)
-        if initial_land_count == 0:
-            return False
-            
-        # Основной цикл генерации
-        attempt_count = 0
-        max_attempts = config.max_province_attempts
+        unassigned_cells = land_cells.copy()
         
-        while land_cells and attempt_count < max_attempts:
-            attempt_count += 1
-            
-            # Создаем новую провинцию
-            if not self._try_create_province(land_cells):
-                continue
-                
-            # Проверяем достаточность провинций
-            if len(self.province_manager.provinces) >= config.max_province_count:
+        # Основной цикл генерации
+        while unassigned_cells:
+            # Выбираем стартовую точку в центре незанятой области
+            start = self._find_best_start_point(unassigned_cells, analysis.center)
+            if not start:
                 break
                 
-            # Проверяем покрытие территории
-            remaining_ratio = len(land_cells) / initial_land_count
-            if remaining_ratio < (1 - config.min_total_coverage):
-                if len(self.province_manager.provinces) >= config.min_province_count:
-                    break
-        
-        # Распределяем оставшиеся клетки
-        if land_cells:
-            self._distribute_remaining_cells(land_cells)
+            # Определяем размер новой провинции
+            target_size = self.province_manager.get_ideal_province_size()
             
-        # В конце метода _try_generate_provinces перед return:
-        self._cleanup_failed_provinces()
-        self._update_province_mapping()
-        return self._verify_generation_quality(config)
+            # Создаем новую провинцию
+            province_id = self.province_manager.create_province()
+            province = self.province_manager.provinces[province_id]
+            
+            # Расширяем провинцию
+            cells_to_add = self._grow_province_from_center(
+                start, target_size, unassigned_cells)
+                
+            # Добавляем клетки в провинцию
+            for cell in cells_to_add:
+                if self.province_manager.add_cell_to_province(province_id, cell):
+                    unassigned_cells.remove(cell)
+        
+        # Проверяем результат
+        coverage = 1 - (len(unassigned_cells) / len(land_cells))
+        if coverage < 1.0:  # Требуем 100% покрытия
+            return False
+            
+        if not self._verify_provinces():
+            return False
+            
+        return True
 
     
     def _try_create_province(self, land_cells: Set[Tuple[int, int]]) -> bool:
@@ -977,3 +988,110 @@ class MapSystem:
             province_info = ProvinceInfoComponent(f"Province {province.id}")
             province_info.cells = set(province.cells)  # Создаем копию множества клеток
             world.add_component(entity_id, province_info)
+
+    def _find_best_start_point(self, available_cells: Set[Tuple[int, int]], 
+                            center: Tuple[float, float]) -> Optional[Tuple[int, int]]:
+        """Находит лучшую стартовую точку для новой провинции."""
+        if not available_cells:
+            return None
+            
+        best_point = None
+        best_score = float('-inf')
+        cx, cy = center
+        
+        for x, y in available_cells:
+            # Оцениваем позицию
+            # 1. Расстояние до центра (ближе = лучше)
+            dist_score = -((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
+            
+            # 2. Количество доступных соседей
+            neighbors = sum(1 for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]
+                        if (x + dx, y + dy) in available_cells)
+            neighbor_score = neighbors * 2  # Даем больший вес наличию соседей
+            
+            # Общая оценка
+            score = dist_score + neighbor_score
+            
+            if score > best_score:
+                best_score = score
+                best_point = (x, y)
+                
+        return best_point
+
+    def _grow_province_from_center(self, start: Tuple[int, int], target_size: int,
+                                available_cells: Set[Tuple[int, int]]) -> Set[Tuple[int, int]]:
+        """Выращивает провинцию из начальной точки."""
+        province_cells = {start}
+        frontier = {start}
+        
+        while len(province_cells) < target_size and frontier:
+            best_cell = None
+            best_score = float('-inf')
+            
+            # Оцениваем все возможные клетки для добавления
+            for cell in frontier:
+                x, y = cell
+                for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                    neighbor = (x + dx, y + dy)
+                    if neighbor not in available_cells:
+                        continue
+                    if neighbor in province_cells:
+                        continue
+                        
+                    # Считаем количество соседей из провинции
+                    province_neighbors = sum(
+                        1 for ndx, ndy in [(0, 1), (1, 0), (0, -1), (-1, 0)]
+                        if (neighbor[0] + ndx, neighbor[1] + ndy) in province_cells
+                    )
+                    
+                    # Оцениваем компактность
+                    cx = sum(x for x, _ in province_cells) / len(province_cells)
+                    cy = sum(y for _, y in province_cells) / len(province_cells)
+                    distance = ((neighbor[0] - cx) ** 2 + (neighbor[1] - cy) ** 2) ** 0.5
+                    
+                    # Общая оценка
+                    score = province_neighbors - (distance * 0.5)
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_cell = neighbor
+            
+            if best_cell is None:
+                break
+                
+            # Добавляем лучшую клетку
+            province_cells.add(best_cell)
+            frontier.add(best_cell)
+            # Удаляем использованные клетки из фронтира
+            frontier = {cell for cell in frontier
+                    if any((cell[0] + dx, cell[1] + dy) not in province_cells
+                            for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)])}
+        
+        return province_cells
+
+    def _verify_provinces(self) -> bool:
+        """Проверяет корректность всех провинций."""
+        for province in self.province_manager.provinces.values():
+            # Проверка размера
+            if not (self.province_manager.config.min_province_size <= 
+                    len(province.cells) <= 
+                    self.province_manager.config.max_province_size):
+                return False
+                
+            # Проверка связности
+            start = next(iter(province.cells))
+            connected = self._get_connected_cells(start, province.cells)
+            if len(connected) != len(province.cells):
+                return False
+                
+            # Проверка соседей (каждая клетка должна иметь хотя бы одного соседа)
+            for x, y in province.cells:
+                has_neighbor = False
+                for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                    if (x + dx, y + dy) in province.cells:
+                        has_neighbor = True
+                        break
+                if not has_neighbor:
+                    return False
+        
+        return True            
