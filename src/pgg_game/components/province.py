@@ -11,4 +11,3 @@ class ProvinceData:
     neighbors: Set[int] = field(default_factory=set)          # ID соседних провинций
     border_cells: Set[Tuple[int, int]] = field(default_factory=set)  # Граничные клетки
     target_size: Optional[int] = None  # Целевой размер провинции
-
