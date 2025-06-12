@@ -86,42 +86,83 @@ class MapSystem:
     def generate_map(self, world: GameWorld) -> None:
         """Генерирует новую карту."""
         try:
-            # 1. Очищаем карту
-            self.grid.fill(0)
-            self.provinces.clear()
-            self.resources.clear()
-            self.cell_to_province.clear()
-            
-            # 2. Генерируем основной остров
-            self._generate_islands()
-            
-            # 3. Проверяем количество суши
-            land_count = np.sum(self.grid)
-            if land_count < self.min_island_size:
-                print("Слишком мало суши для генерации провинций")
+            max_retries = 3  # Максимальное количество полных перезапусков генерации
+            for retry in range(max_retries):
+                # 1. Очищаем карту
+                self.grid.fill(0)
+                self.provinces.clear()
+                self.resources.clear()
+                self.cell_to_province.clear()
+                self.province_manager = ProvinceManager()  # Пересоздаём менеджера
+                
+                # 2. Генерируем основной остров
+                self._generate_islands()
+                
+                # 3. Проверяем количество суши
+                land_count = np.sum(self.grid)
+                if land_count < self.min_island_size:
+                    print(f"Попытка {retry + 1}: Слишком мало суши")
+                    continue
+                
+                # 4. Генерируем провинции с таймаутом
+                success = self._generate_with_timeout(3.0)  # Уменьшаем таймаут до 3 секунд
+                if not success:
+                    print(f"Попытка {retry + 1}: Не удалось сгенерировать провинции")
+                    continue
+                
+                # 5. Проверяем результат
+                if not self._verify_final_state():
+                    print(f"Попытка {retry + 1}: Результат не прошёл проверку")
+                    continue
+                
+                # 6. Генерация успешна
+                self._update_province_mapping()
+                self._generate_resources()
+                self._create_province_entities(world)
+                self.map_generated = True
                 return
+                
+            # Если все попытки неудачны
+            raise RuntimeError("Не удалось сгенерировать карту после всех попыток")
             
-            # 4. Генерируем провинции с таймаутом
-            success = self._generate_with_timeout(5.0)  # 5 секунд таймаут
-            if not success:
-                print("Не удалось сгенерировать провинции")
-                return
-            
-            # 5. Обновляем состояние
-            self._update_province_mapping()
-            
-            # 6. Генерируем ресурсы
-            self._generate_resources()
-            
-            # 7. Создаем сущности для провинций
-            self._create_province_entities(world)
-            
-            # После успешной генерации карты
-            self.map_generated = True
         except Exception as e:
             print(f"Ошибка при генерации карты: {e}")
             raise
 
+    def _verify_final_state(self) -> bool:
+        """Проверяет финальное состояние карты."""
+        if not self.province_manager.provinces:
+            return False
+            
+        # Проверяем базовые требования
+        min_provinces = self.province_manager.config.min_province_count
+        max_provinces = self.province_manager.config.max_province_count
+        if not (min_provinces <= len(self.province_manager.provinces) <= max_provinces):
+            return False
+        
+        # Проверяем размеры провинций
+        for province in self.province_manager.provinces.values():
+            if not (self.province_manager.config.min_province_size <= 
+                    len(province.cells) <= 
+                    self.province_manager.config.max_province_size):
+                return False
+        
+        # Проверяем, что все провинции связные
+        for province_id in self.province_manager.provinces:
+            if not self._check_province_connectivity(province_id):
+                return False
+        
+        # Подсчитываем общее покрытие
+        total_land = sum(1 for y in range(GRID_HEIGHT) for x in range(GRID_WIDTH) 
+                        if self.grid[y, x] == 1)
+        if total_land == 0:
+            return False
+            
+        total_province_cells = sum(len(p.cells) for p in self.province_manager.provinces.values())
+        coverage = total_province_cells / total_land
+        
+        return coverage >= self.province_manager.config.min_total_coverage
+    
     def _generate_with_timeout(self, timeout: float) -> bool:
         """
         Пытается сгенерировать провинции с таймаутом.

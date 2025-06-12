@@ -6,41 +6,39 @@ from typing import Dict
 class ProvinceGenerationConfig:
     """Конфигурация для генерации провинций."""
     # Базовые ограничения
-    min_province_size: int = 4  # Минимальный размер не меняем
-    max_province_size: int = 10  # Немного увеличиваем максимальный размер
+    min_province_size: int = 4
+    max_province_size: int = 8  # Возвращаем к 8
     min_province_count: int = 3
-    max_province_count: int = 15  # Уменьшаем для лучшего контроля
+    max_province_count: int = 12  # Уменьшаем максимум
     
     # Настройки генерации
-    max_generation_attempts: int = 100  # Увеличиваем количество попыток
-    max_province_attempts: int = 150
-    min_total_coverage: float = 0.95  # Увеличиваем минимальное покрытие
-    allow_diagonal_growth: bool = True
-    check_plus_intersection: bool = True  # Включаем проверку плюсов
+    max_generation_attempts: int = 50  # Уменьшаем количество попыток
+    max_province_attempts: int = 100
+    min_total_coverage: float = 0.90  # Уменьшаем требования к покрытию
+    allow_diagonal_growth: bool = False  # Отключаем диагональный рост
+    check_plus_intersection: bool = True
     
-    # Вероятности размеров провинций
+    # Вероятности размеров провинций (убираем большие размеры)
     size_probabilities: Dict[int, float] = field(default_factory=lambda: {
-        4: 0.10,  # Уменьшаем вероятность маленьких провинций
-        5: 0.20,
-        6: 0.30,  # Увеличиваем вероятность средних провинций
-        7: 0.25,
-        8: 0.10,
-        9: 0.03,
-        10: 0.02
+        4: 0.15,
+        5: 0.25,
+        6: 0.35,  # Увеличиваем вероятность среднего размера
+        7: 0.15,
+        8: 0.10
     })
     
     # Веса для выбора следующей клетки
     weights: Dict[str, float] = field(default_factory=lambda: {
-        'neighbor_count': 0.6,    # Увеличиваем вес соседей
-        'compactness': 0.3,
-        'center_distance': 0.05,  # Уменьшаем влияние расстояния
-        'border_length': 0.05     # Уменьшаем влияние границ
+        'neighbor_count': 0.7,    # Увеличиваем важность соседей
+        'compactness': 0.2,       # Уменьшаем важность компактности
+        'center_distance': 0.05,
+        'border_length': 0.05
     })
     
     # Параметры качества генерации
     quality_thresholds: Dict[str, float] = field(default_factory=lambda: {
-        'min_compactness': 0.7,      # Увеличиваем требования к компактности
-        'max_border_ratio': 0.4,     # Уменьшаем допустимую длину границ
-        'min_province_ratio': 0.95,   # Увеличиваем требования к размеру
-        'max_size_variance': 0.15     # Уменьшаем допустимую разницу размеров
+        'min_compactness': 0.6,
+        'max_border_ratio': 0.4,
+        'min_province_ratio': 0.9,
+        'max_size_variance': 0.2
     })

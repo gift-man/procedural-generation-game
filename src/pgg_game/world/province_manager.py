@@ -198,24 +198,30 @@ class ProvinceManager:
                     
         # Все клетки должны быть достижимы
         return len(visited) == len(province.cells)
+    
     def get_ideal_province_size(self) -> int:
         """
         Возвращает размер провинции на основе вероятностей из конфигурации.
-        
-        Returns:
-            int: Размер провинции
         """
-        rand = random.random()
+        # Проверяем наличие вероятностей
+        if not hasattr(self.config, 'size_probabilities') or not self.config.size_probabilities:
+            return 6  # Значение по умолчанию
+            
+        # Нормализуем вероятности
+        total_prob = sum(self.config.size_probabilities.values())
+        if total_prob == 0:
+            return 6
+            
+        rand = random.random() * total_prob
         cumulative = 0.0
         
-        # Используем вероятности из конфигурации
-        for size, prob in self.config.size_probabilities.items():
+        for size, prob in sorted(self.config.size_probabilities.items()):
             cumulative += prob
             if rand <= cumulative:
                 return size
-                
-        # По умолчанию возвращаем средний размер
-        return 6
+        
+        # Возвращаем максимальный разрешённый размер если что-то пошло не так
+        return min(8, self.config.max_province_size)
     
     def get_available_province_sizes(self) -> List[int]:
         """
