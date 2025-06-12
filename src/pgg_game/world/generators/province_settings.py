@@ -1,6 +1,6 @@
 """Настройки генерации провинций."""
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict
 
 @dataclass
 class ProvinceGenerationConfig:
@@ -20,25 +20,24 @@ class ProvinceGenerationConfig:
     
     # Вероятности размеров провинций
     size_probabilities: Dict[int, float] = field(default_factory=lambda: {
-        4: 0.15,  # 15% шанс для провинций размером 4
-        5: 0.20,  # 20% шанс для провинций размером 5
-        6: 0.30,  # 30% шанс для провинций размером 6
+        4: 0.20,  # 20% шанс для провинций размером 4
+        5: 0.25,  # 25% шанс для провинций размером 5
+        6: 0.25,  # 25% шанс для провинций размером 6
         7: 0.20,  # 20% шанс для провинций размером 7
-        8: 0.15   # 15% шанс для провинций размером 8
+        8: 0.10   # 10% шанс для провинций размером 8
     })
     
     # Веса для выбора следующей клетки
     weights: Dict[str, float] = field(default_factory=lambda: {
-        'neighbor_count': 0.4,    # Вес количества соседей
-        'compactness': 0.3,       # Вес компактности формы
-        'center_distance': 0.2,   # Вес расстояния от центра провинции
-        'border_length': 0.1      # Вес длины общей границы
+        'neighbor_count': 0.5,     # Вес количества соседей
+        'compactness': 0.3,        # Вес компактности формы
+        'center_distance': 0.2,    # Вес расстояния от центра провинции
     })
     
     # Параметры качества генерации
     quality_thresholds: Dict[str, float] = field(default_factory=lambda: {
-        'min_compactness': 0.5,     # Минимальная компактность провинции
-        'max_border_ratio': 0.6,     # Максимальное отношение границы к площади
-        'min_province_ratio': 0.8,   # Минимальное отношение размера к целевому
-        'max_size_variance': 0.3     # Максимальное отклонение размеров провинций
+        'min_compactness': 0.6,      # Минимальная компактность провинции
+        'max_border_ratio': 0.5,     # Максимальное отношение границы к площади
+        'min_province_ratio': 0.9,   # Минимальное отношение размера к целевому
+        'max_size_variance': 0.2     # Максимальное отклонение размеров провинций
     })

@@ -1,191 +1,132 @@
 """Менеджер провинций."""
 import random
 from typing import Set, Dict, Tuple, Optional, List
-from ..world.generators.province_settings import ProvinceGenerationConfig
 from collections import deque
-from ..components.province import ProvinceData, Province  # Добавляем импорт Province
+from ..components.province import ProvinceData, Province
+from ..world.generators.province_settings import ProvinceGenerationConfig
 
 class ProvinceManager:
     """Управляет провинциями на карте."""
-        
+    
     def __init__(self, config: Optional[ProvinceGenerationConfig] = None):
-        """
-        Инициализация менеджера провинций.
-        
-        Args:
-            config: Настройки генерации провинций
-        """
+        """Инициализация менеджера провинций."""
         self.provinces: Dict[int, ProvinceData] = {}
         self.cell_to_province: Dict[Tuple[int, int], int] = {}
         self.next_province_id = 0
         self.config = config or ProvinceGenerationConfig()
-
-    def get_province_cells(self, province_id: int) -> Set[Tuple[int, int]]:
-        """
-        Возвращает клетки провинции.
+        self.growth_attempts = 0
+        self.max_growth_attempts = 100  # Предотвращаем бесконечный цикл
         
-        Args:
-            province_id: ID провинции
-            
-        Returns:
-            Set[Tuple[int, int]]: Множество клеток провинции
-        """
-        if province_id in self.provinces:
-            return set(self.provinces[province_id].cells)
-        return set()
-    
+    def _reset_growth_attempts(self):
+        """Сбрасывает счетчик попыток роста."""
+        self.growth_attempts = 0
+        
+    def _increment_growth_attempts(self) -> bool:
+        """Увеличивает счетчик попыток роста и проверяет лимит."""
+        self.growth_attempts += 1
+        return self.growth_attempts < self.max_growth_attempts
+        
     def get_provinces(self) -> List[Province]:
-        """
-        Возвращает список провинций.
-        
-        Returns:
-            List[Province]: Список провинций
-        """
-        result = []
-        for pid, data in self.provinces.items():
-            province = Province(id=pid, cells=set(data.cells))
-            province.province_data = data
-            result.append(province)
-        return result
-    
-    def get_ideal_province_size(self) -> int:
-        """
-        Возвращает размер провинции на основе вероятностей из конфигурации.
-        
-        Returns:
-            int: Размер провинции от 4 до 8 клеток
-        """
-        rand = random.random()
-        cumulative = 0.0
-        
-        for size, prob in self.config.size_probabilities.items():
-            cumulative += prob
-            if rand <= cumulative:
-                return size
+        """Возвращает список провинций."""
+        return [Province(id=pid, cells=set(data.cells)) 
+                for pid, data in self.provinces.items()]
                 
-        # По умолчанию возвращаем средний размер
-        return 6
-
     def create_province(self, target_size: Optional[int] = None) -> int:
-        """
-        Создает новую провинцию.
-        
-        Args:
-            target_size: Желаемый размер провинции
-            
-        Returns:
-            int: ID новой провинции
-        """
+        """Создает новую провинцию."""
         province_id = self.next_province_id
         self.next_province_id += 1
         self.provinces[province_id] = ProvinceData(target_size=target_size)
+        self._reset_growth_attempts()
         return province_id
-    
-    def add_cell_to_province(self, province_id: int, cell: Tuple[int, int]) -> bool:
+        
+    def add_cell_to_province(self, province_id: int, cell: Tuple[int, int], 
+                            force: bool = False) -> bool:
         """Добавляет клетку в провинцию."""
-        if cell in self.cell_to_province:
+        if not self._increment_growth_attempts():
+            return False
+            
+        if cell in self.cell_to_province and not force:
             return False
             
         province = self.provinces[province_id]
         
         # Проверяем целевой размер
         if (province.target_size is not None and 
-            len(province.cells) >= province.target_size):
+            len(province.cells) >= province.target_size and 
+            not force):
             return False
             
+        # Если это первая клетка, всегда добавляем
+        if not province.cells:
+            province.cells.add(cell)
+            self.cell_to_province[cell] = province_id
+            province.update_metrics()
+            return True
+            
         # Проверяем создание плюсового пересечения
-        if self.config.check_plus_intersection:
+        if self.config.check_plus_intersection and not force:
             if self._would_create_plus_intersection(province_id, cell):
                 return False
             
-        # Проверка связности для существующей провинции
-        if not self._would_maintain_connectivity(province_id, cell):
+        # Проверяем связность
+        if not self._has_valid_connection(province_id, cell) and not force:
             return False
-        
-        # Проверяем минимальный размер
-        if len(province.cells) < self.config.min_province_size:
-            province.cells.add(cell)
-            self.cell_to_province[cell] = province_id
-            return True
             
         # Добавляем клетку
         province.cells.add(cell)
         self.cell_to_province[cell] = province_id
         
-        # Проверяем валидность после добавления
-        if not self._validate_province_state(province_id):
-            province.cells.remove(cell)
-            del self.cell_to_province[cell]
-            return False
-        
         # Обновляем метрики провинции
         province.update_metrics()
         return True
-    
+        
+    def _has_valid_connection(self, province_id: int, cell: Tuple[int, int]) -> bool:
+        """Проверяет, имеет ли клетка действительное соединение с провинцией."""
+        province = self.provinces[province_id]
+        x, y = cell
+        
+        # Проверяем наличие хотя бы одного соседа из той же провинции
+        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+            neighbor = (x + dx, y + dy)
+            if neighbor in province.cells:
+                return True
+        return False
+        
     def _would_create_plus_intersection(self, province_id: int, cell: Tuple[int, int]) -> bool:
         """Проверяет, создаст ли добавление клетки плюсовое пересечение."""
         x, y = cell
-        # Проверяем только центральное пересечение ┼
-        pattern = [(0, 0), (0, -1), (1, 0), (0, 1), (-1, 0)]
         
-        provinces_in_pattern = set()
-        for dx, dy in pattern:
-            check_cell = (x + dx, y + dy)
-            if check_cell == cell:
-                provinces_in_pattern.add(province_id)
-            elif check_cell in self.cell_to_province:
-                provinces_in_pattern.add(self.cell_to_province[check_cell])
+        # Проверяем все четыре направления
+        directions = [(0, -1), (1, 0), (0, 1), (-1, 0)]  # верх, право, низ, лево
+        neighbors = []
         
-        return len(provinces_in_pattern) == len(pattern)
-
-    def _would_maintain_connectivity(self, province_id: int, cell: Tuple[int, int]) -> bool:
-        """Проверяет, сохранит ли добавление клетки связность провинции."""
-        if not self.provinces[province_id].cells:
-            return True
-            
-        x, y = cell
-        for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+        for dx, dy in directions:
             neighbor = (x + dx, y + dy)
-            if neighbor in self.provinces[province_id].cells:
-                return True
-        return False
-    
-    def _validate_province_state(self, province_id: int) -> bool:
-        """Проверяет текущее состояние провинции."""
-        province = self.provinces[province_id]
-        
-        # Проверка размера
-        if (len(province.cells) < self.config.min_province_size or
-            len(province.cells) > self.config.max_province_size):
-            return False
-        
-        # Проверка связности
-        if not self._check_connectivity(province_id):
-            return False
-        
-        # Проверка плюсовых пересечений
-        if self.config.check_plus_intersection:
-            for cell in province.cells:
-                if self._has_plus_intersection(cell, province.cells):
-                    return False
+            if neighbor in self.cell_to_province:
+                neighbor_province = self.cell_to_province[neighbor]
+                if neighbor_province != province_id:
+                    neighbors.append(neighbor_province)
                     
+        # Если есть клетки от трех разных провинций вокруг, 
+        # это создаст плюсовое пересечение
+        return len(set(neighbors)) >= 3
+        
+    def validate_provinces(self) -> bool:
+        """Проверяет валидность всех провинций."""
+        for pid in self.provinces:
+            if not self.validate_province(pid):
+                return False
         return True
-    
-    def _has_plus_intersection(self, cell: Tuple[int, int], cells: Set[Tuple[int, int]]) -> bool:
-        """Проверяет наличие плюсового пересечения."""
-        x, y = cell
-        directions = [(0, -1), (1, 0), (0, 1), (-1, 0)]  # Верх, право, низ, лево
-        return all((x + dx, y + dy) in cells for dx, dy in directions)
-    
+        
     def validate_province(self, province_id: int) -> bool:
-        """
-        Проверяет корректность провинции.
-        """
+        """Проверяет валидность конкретной провинции."""
         province = self.provinces[province_id]
         
-        # Проверка размера
+        # Проверка минимального размера
         if len(province.cells) < self.config.min_province_size:
             return False
+            
+        # Проверка максимального размера
         if len(province.cells) > self.config.max_province_size:
             return False
             
@@ -193,30 +134,42 @@ class ProvinceManager:
         if not self._check_connectivity(province_id):
             return False
             
-        # Проверка плюсовых пересечений
+        # Проверка отсутствия плюсовых пересечений
         if self.config.check_plus_intersection:
             for cell in province.cells:
-                if self._would_create_plus_intersection(province_id, cell):
+                # Временно убираем клетку из провинции для проверки
+                old_province = self.cell_to_province.get(cell)
+                if old_province is not None:
+                    del self.cell_to_province[cell]
+                
+                has_plus = self._would_create_plus_intersection(province_id, cell)
+                
+                # Возвращаем клетку обратно
+                if old_province is not None:
+                    self.cell_to_province[cell] = old_province
+                    
+                if has_plus:
                     return False
                     
         return True
-
+        
     def _check_connectivity(self, province_id: int) -> bool:
-        """
-        Проверяет связность провинции через обход в ширину.
-        """
+        """Проверяет связность провинции."""
         province = self.provinces[province_id]
         if not province.cells:
             return True
             
+        # Начинаем с первой клетки
         start = next(iter(province.cells))
         visited = {start}
         queue = deque([start])
         
+        # Обход в ширину
         while queue:
             current = queue.popleft()
             x, y = current
             
+            # Проверяем все соседние клетки
             for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
                 neighbor = (x + dx, y + dy)
                 if (neighbor in province.cells and 
@@ -224,4 +177,5 @@ class ProvinceManager:
                     visited.add(neighbor)
                     queue.append(neighbor)
                     
+        # Все клетки должны быть достижимы
         return len(visited) == len(province.cells)
