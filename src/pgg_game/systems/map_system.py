@@ -15,11 +15,10 @@ except ImportError:
     print("pip install numpy>=1.24.0")
     sys.exit(1)
 
-from ..components.province_info import ProvinceInfoComponent
-from ..components.transform import TransformComponent
-from ..components.renderable import RenderableComponent
+
+
+
 from ..config import COLORS, RENDER_LAYERS
-from ..world.game_world import GameWorld
 from ..world.generators.province_settings import ProvinceGenerationConfig
 from ..world.province_manager import ProvinceManager
 from ..world.game_world import GameWorld
@@ -40,6 +39,7 @@ from ..config import (
 class MapSystem:
     """Система управления картой."""
     
+
     def __init__(self):
         """Инициализация системы карты."""
         self.grid = np.zeros((GRID_HEIGHT, GRID_WIDTH), dtype=np.int32)
@@ -48,7 +48,7 @@ class MapSystem:
         self.resources = {}  # Словарь ресурсов
         self.world = None
         self.map_generated = False
-        
+        self.province_manager = None  # Создаём менеджера провинций позже
         # Настройки генерации
         self.min_province_size = 4
         self.max_province_size = 8
@@ -68,7 +68,6 @@ class MapSystem:
 
         # Создаем менеджер провинций
         self.province_manager = ProvinceManager()
-
     def update(self, world: GameWorld) -> None:
         """
         Обновление состояния карты.
@@ -84,32 +83,40 @@ class MapSystem:
             self.map_generated = True
     
     def generate_map(self, world: GameWorld) -> None:
-        """
-        Генерирует новую карту.
-        
-        Args:
-            world: Игровой мир
-        """
+        """Генерирует новую карту."""
         # 1. Очищаем карту
         self.grid.fill(0)
         self.provinces.clear()
         self.resources.clear()
+        self.cell_to_province.clear()
         
         # 2. Генерируем основной остров
         self._generate_islands()
         
-        # 3. Разделяем на провинции
-        self.generate_provinces()  # Изменено с _generate_provinces() на generate_provinces()
+        # 3. Генерируем провинции
+        if not self.generate_provinces():
+            print("Не удалось сгенерировать провинции")
+            return
         
-        # 4. Генерируем ресурсы
+        # 4. Обновляем состояние
+        self._update_province_mapping()
+        
+        # 5. Генерируем ресурсы
         self._generate_resources()
         
-        # 5. Создаем сущности для провинций
+        # 6. Создаем сущности для провинций
         self._create_province_entities(world)
-
+        
         # После успешной генерации карты
         self.map_generated = True
-    
+
+    def _update_province_mapping(self) -> None:
+        """Обновляет маппинг клеток к провинциям."""
+        self.cell_to_province.clear()
+        for province_id, province in self.province_manager.provinces.items():
+            for cell in province.cells:
+                self.cell_to_province[cell] = province_id
+
     def _generate_islands(self) -> None:
         """Генерирует острова на карте."""
         # Центр карты
@@ -383,72 +390,6 @@ class MapSystem:
         return False
 
     def _try_generate_provinces(self, config: ProvinceGenerationConfig) -> bool:
-        """
-        Пытается сгенерировать провинции с заданной конфигурацией.
-        
-        Args:
-            config: Настройки генерации
-            
-        Returns:
-            bool: True если генерация успешна
-        """
-        # Очищаем старые провинции
-        self.provinces.clear()
-        self.cell_to_province.clear()
-        self.province_manager = ProvinceManager(config=config)
-        
-        # Собираем все клетки суши
-        land_cells = set()
-        total_land = 0
-        for y in range(GRID_HEIGHT):
-            for x in range(GRID_WIDTH):
-                if self.grid[y, x] == 1:
-                    land_cells.add((x, y))
-                    total_land += 1
-                    
-        initial_land_count = len(land_cells)
-        
-        # Основной цикл генерации провинций
-        while land_cells:
-            if not self._try_create_province(land_cells, config):
-                return False
-                
-            # Проверяем критерии качества
-            if len(land_cells) / initial_land_count < (1 - config.min_total_coverage):
-                if len(self.province_manager.provinces) >= config.min_province_count:
-                    break
-                    
-        # Финальная проверка качества
-        return self._verify_generation_quality(config)
-    
-    def _try_create_province(self, land_cells: Set[Tuple[int, int]]) -> bool:
-            """Пытается создать одну провинцию."""
-            if not land_cells:
-                return False
-                
-            # Создаем новую провинцию
-            province_id = self.province_manager.create_province()
-            target_size = self.province_manager.get_ideal_province_size()
-            
-            # Выбираем начальную точку
-            candidates = []
-            for cell in land_cells:
-                x, y = cell
-                # Подсчитываем соседей
-                neighbors = sum(1 for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]
-                            if (x + dx, y + dy) in land_cells)
-                candidates.append((cell, neighbors))
-                
-            if not candidates:
-                return False
-                
-            # Выбираем точку с наибольшим количеством соседей
-            start, _ = max(candidates, key=lambda x: x[1])
-            
-            # Начинаем рост провинции
-            return self._grow_province(province_id, start, target_size, land_cells)
-    
-    def _try_generate_provinces(self, config: ProvinceGenerationConfig) -> bool:
         """Пытается сгенерировать провинции."""
         # Очищаем старые провинции
         self.provinces.clear()
@@ -467,21 +408,61 @@ class MapSystem:
             return False
             
         # Основной цикл генерации
-        while land_cells:
+        attempt_count = 0
+        max_attempts = config.max_province_attempts
+        
+        while land_cells and attempt_count < max_attempts:
+            attempt_count += 1
+            
+            # Создаем новую провинцию
             if not self._try_create_province(land_cells):
-                return False
+                continue
                 
-            # Проверяем критерии завершения
+            # Проверяем достаточность провинций
+            if len(self.province_manager.provinces) >= config.max_province_count:
+                break
+                
+            # Проверяем покрытие территории
             remaining_ratio = len(land_cells) / initial_land_count
             if remaining_ratio < (1 - config.min_total_coverage):
                 if len(self.province_manager.provinces) >= config.min_province_count:
                     break
-                    
+        
         # Распределяем оставшиеся клетки
         if land_cells:
             self._distribute_remaining_cells(land_cells)
             
+        # Обновляем маппинг клеток
+        self._update_province_mapping()
+        
+        # Проверяем финальное качество
         return self._verify_generation_quality(config)
+    
+    def _try_create_province(self, land_cells: Set[Tuple[int, int]]) -> bool:
+        """Пытается создать одну провинцию."""
+        if not land_cells:
+            return False
+            
+        # Создаем новую провинцию
+        province_id = self.province_manager.create_province()
+        target_size = self.province_manager.get_ideal_province_size()
+        
+        # Выбираем начальную точку
+        start = self._find_best_start_point(land_cells, self.province_manager.config)
+        if not start:
+            # Если не нашли хорошую точку, удаляем провинцию
+            self.province_manager.provinces.pop(province_id, None)
+            return False
+            
+        # Пытаемся вырастить провинцию
+        success = self._grow_province(province_id, start, target_size, land_cells)
+        if not success:
+            # Если не удалось вырастить, удаляем провинцию
+            self.province_manager.provinces.pop(province_id, None)
+            return False
+            
+        return True
+
     
     def _distribute_remaining_cells(self, land_cells: Set[Tuple[int, int]]) -> None:
         """Распределяет оставшиеся клетки по существующим провинциям."""
@@ -755,40 +736,6 @@ class MapSystem:
                             
         return True
 
-    def _try_generate_provinces(self, config: ProvinceGenerationConfig) -> bool:
-        """Пытается сгенерировать провинции."""
-        # Очищаем старые провинции
-        self.provinces.clear()
-        self.cell_to_province.clear()
-        self.province_manager = ProvinceManager(config=config)
-        
-        # Собираем все клетки суши
-        land_cells = set()
-        for y in range(GRID_HEIGHT):
-            for x in range(GRID_WIDTH):
-                if self.grid[y, x] == 1:
-                    land_cells.add((x, y))
-                    
-        initial_land_count = len(land_cells)
-        if initial_land_count == 0:
-            return False
-            
-        # Основной цикл генерации
-        while land_cells:
-            if not self._try_create_province(land_cells):
-                return False
-                
-            # Проверяем критерии завершения
-            remaining_ratio = len(land_cells) / initial_land_count
-            if remaining_ratio < (1 - config.min_total_coverage):
-                if len(self.province_manager.provinces) >= config.min_province_count:  # Изменено с min_province_count
-                    break
-                    
-        # Распределяем оставшиеся клетки
-        if land_cells:
-            self._distribute_remaining_cells(land_cells)
-            
-        return self._verify_generation_quality(config)
 
     def _check_province_connectivity(self, province_id: int) -> bool:
         """
