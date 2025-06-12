@@ -3,6 +3,7 @@ import random
 from typing import Set, Dict, Tuple, Optional
 from ..components.province import ProvinceData
 from ..world.generators.province_settings import ProvinceGenerationConfig
+from collections import deque
 
 class ProvinceManager:
     """Управляет провинциями на карте."""
@@ -12,7 +13,7 @@ class ProvinceManager:
         Инициализация менеджера провинций.
         
         Args:
-            config: Настройки генерации провинций
+            config: Настройки генерации
         """
         self.provinces: Dict[int, ProvinceData] = {}
         self.cell_to_province: Dict[Tuple[int, int], int] = {}
@@ -106,8 +107,59 @@ class ProvinceManager:
         """
         rand = random.random()
         cumulative = 0.0
+        
         for size, prob in self.config.size_probabilities.items():
             cumulative += prob
             if rand <= cumulative:
                 return size
-        return 6  # По умолчанию размер 6
+                
+        # По умолчанию возвращаем оптимальный размер
+        return 6
+    def validate_province(self, province_id: int) -> bool:
+        """
+        Проверяет корректность провинции.
+        """
+        province = self.provinces[province_id]
+        
+        # Проверка размера
+        if len(province.cells) < self.config.min_province_size:
+            return False
+        if len(province.cells) > self.config.max_province_size:
+            return False
+            
+        # Проверка связности
+        if not self._check_connectivity(province_id):
+            return False
+            
+        # Проверка плюсовых пересечений
+        if self.config.check_plus_intersection:
+            for cell in province.cells:
+                if self._would_create_plus_intersection(province_id, cell):
+                    return False
+                    
+        return True
+
+    def _check_connectivity(self, province_id: int) -> bool:
+        """
+        Проверяет связность провинции через обход в ширину.
+        """
+        province = self.provinces[province_id]
+        if not province.cells:
+            return True
+            
+        start = next(iter(province.cells))
+        visited = {start}
+        queue = deque([start])
+        
+        while queue:
+            current = queue.popleft()
+            x, y = current
+            
+            for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                neighbor = (x + dx, y + dy)
+                if (neighbor in province.cells and 
+                    neighbor not in visited):
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+                    
+        return len(visited) == len(province.cells)

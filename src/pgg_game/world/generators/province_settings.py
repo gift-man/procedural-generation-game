@@ -5,11 +5,20 @@ from typing import Dict, Optional
 @dataclass
 class ProvinceGenerationConfig:
     """Конфигурация для генерации провинций."""
-    # Базовые ограничения размера
+    # Базовые ограничения
     min_province_size: int = 4
     max_province_size: int = 8
+    min_provinces: int = 3
+    max_provinces: int = 20
     
-    # Вероятности размеров провинций (должны в сумме давать 1.0)
+    # Настройки генерации
+    max_generation_attempts: int = 5
+    max_province_attempts: int = 50
+    allow_diagonal_growth: bool = False
+    check_plus_intersection: bool = True
+    min_total_coverage: float = 0.95
+    
+    # Вероятности размеров провинций
     size_probabilities: Dict[int, float] = field(default_factory=lambda: {
         4: 0.15,  # 15% шанс для провинций размером 4
         5: 0.20,  # 20% шанс для провинций размером 5
@@ -17,14 +26,11 @@ class ProvinceGenerationConfig:
         7: 0.20,  # 20% шанс для провинций размером 7
         8: 0.15   # 15% шанс для провинций размером 8
     })
-    
-    # Настройки генерации
-    max_generation_attempts: int = 5  # Максимальное число попыток генерации карты
-    max_province_attempts: int = 50   # Максимальное число попыток создания одной провинции
-    allow_diagonal_growth: bool = False  # Рост только по основным направлениям
-    check_plus_intersection: bool = True  # Проверка на плюсовые пересечения
-    
-    # Параметры проверки качества
-    min_province_count: int = 3  # Минимальное количество провинций
-    min_total_coverage: float = 0.95  # Минимальный процент занятых клеток суши
-    quality_threshold: float = 0.8  # Минимальное качество для принятия результата
+
+    # Веса для выбора следующей клетки
+    weights: Dict[str, float] = field(default_factory=lambda: {
+        'neighbor_count': 0.4,    # Вес количества соседей
+        'compactness': 0.3,       # Вес компактности формы
+        'center_distance': 0.2,   # Вес расстояния от центра провинции
+        'border_length': 0.1      # Вес длины общей границы
+    })
