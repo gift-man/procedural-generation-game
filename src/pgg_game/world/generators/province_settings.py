@@ -8,15 +8,14 @@ class ProvinceGenerationConfig:
     # Базовые ограничения
     min_province_size: int = 4
     max_province_size: int = 8
-    min_province_count: int = 3  # Изменено с min_provinces
-    max_province_count: int = 20  # Изменено с max_provinces
+    min_province_count: int = 3
+    max_province_count: int = 20
     
     # Настройки генерации
-    max_generation_attempts: int = 5
-    max_province_attempts: int = 50
-    allow_diagonal_growth: bool = False
-    check_plus_intersection: bool = True
-    min_total_coverage: float = 0.95
+    max_generation_attempts: int = 50  # Увеличено с 5
+    max_province_attempts: int = 100   # Увеличено с 50
+    allow_diagonal_growth: bool = True # Изменено на True
+    check_plus_intersection: bool = False # Изменено на False для упрощения
     
     # Вероятности размеров провинций
     size_probabilities: Dict[int, float] = field(default_factory=lambda: {
@@ -29,9 +28,10 @@ class ProvinceGenerationConfig:
     
     # Веса для выбора следующей клетки
     weights: Dict[str, float] = field(default_factory=lambda: {
-        'neighbor_count': 0.5,     # Вес количества соседей
-        'compactness': 0.3,        # Вес компактности формы
-        'center_distance': 0.2,    # Вес расстояния от центра провинции
+        'neighbor_count': 0.5,    # Увеличен вес соседей
+        'compactness': 0.3,
+        'center_distance': 0.1,   # Уменьшен вес расстояния
+        'border_length': 0.1
     })
     
     # Параметры качества генерации
