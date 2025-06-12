@@ -370,11 +370,9 @@ class MapSystem:
                             
     def generate_provinces(self) -> None:
         """Генерирует провинции на карте."""
-        # Создаем конфигурацию
+        # Создаем конфигурацию и менеджер провинций
         config = ProvinceGenerationConfig()
-        
-        # Создаем менеджер провинций с конфигурацией
-        self.province_manager = ProvinceManager(config)
+        self.province_manager = ProvinceManager(config=config)  # Важно! Правильная передача config
         
         # Очищаем старые провинции
         self.provinces.clear()
@@ -401,7 +399,6 @@ class MapSystem:
             
             for cell in land_cells:
                 x, y = cell
-                # Считаем только непосредственных соседей (без диагоналей)
                 neighbor_count = sum(1 for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]
                                 if (x + dx, y + dy) in land_cells)
                 
