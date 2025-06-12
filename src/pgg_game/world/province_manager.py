@@ -82,42 +82,45 @@ class ProvinceManager:
         return province_id
     
     def add_cell_to_province(self, province_id: int, cell: Tuple[int, int]) -> bool:
-            """
-            Добавляет клетку в провинцию.
+        """Добавляет клетку в провинцию."""
+        if cell in self.cell_to_province:
+            return False
             
-            Args:
-                province_id: ID провинции
-                cell: Координаты клетки (x, y)
-                
-            Returns:
-                bool: True если клетка успешно добавлена
-            """
-            if cell in self.cell_to_province:
-                return False
-                
-            province = self.provinces[province_id]
+        province = self.provinces[province_id]
+        
+        # Проверяем целевой размер
+        if (province.target_size is not None and 
+            len(province.cells) >= province.target_size):
+            return False
             
-            # Проверяем целевой размер
-            if (province.target_size is not None and 
-                len(province.cells) >= province.target_size):
-                return False
-                
-            # Проверяем создание плюсового пересечения
-            if self.config.check_plus_intersection:
-                if self._would_create_plus_intersection(province_id, cell):
-                    return False
-                
-            # Проверка связности для существующей провинции
-            if not self._would_maintain_connectivity(province_id, cell):
+        # Проверяем создание плюсового пересечения
+        if self.config.check_plus_intersection:
+            if self._would_create_plus_intersection(province_id, cell):
                 return False
             
-            # Добавляем клетку
+        # Проверка связности для существующей провинции
+        if not self._would_maintain_connectivity(province_id, cell):
+            return False
+        
+        # Проверяем минимальный размер
+        if len(province.cells) < self.config.min_province_size:
             province.cells.add(cell)
             self.cell_to_province[cell] = province_id
-            
-            # Обновляем метрики провинции
-            province.update_metrics()
             return True
+            
+        # Добавляем клетку
+        province.cells.add(cell)
+        self.cell_to_province[cell] = province_id
+        
+        # Проверяем валидность после добавления
+        if not self._validate_province_state(province_id):
+            province.cells.remove(cell)
+            del self.cell_to_province[cell]
+            return False
+        
+        # Обновляем метрики провинции
+        province.update_metrics()
+        return True
     
     def _would_create_plus_intersection(self, province_id: int, cell: Tuple[int, int]) -> bool:
         """Проверяет, создаст ли добавление клетки плюсовое пересечение."""
@@ -146,8 +149,34 @@ class ProvinceManager:
             if neighbor in self.provinces[province_id].cells:
                 return True
         return False
-
-
+    
+    def _validate_province_state(self, province_id: int) -> bool:
+        """Проверяет текущее состояние провинции."""
+        province = self.provinces[province_id]
+        
+        # Проверка размера
+        if (len(province.cells) < self.config.min_province_size or
+            len(province.cells) > self.config.max_province_size):
+            return False
+        
+        # Проверка связности
+        if not self._check_connectivity(province_id):
+            return False
+        
+        # Проверка плюсовых пересечений
+        if self.config.check_plus_intersection:
+            for cell in province.cells:
+                if self._has_plus_intersection(cell, province.cells):
+                    return False
+                    
+        return True
+    
+    def _has_plus_intersection(self, cell: Tuple[int, int], cells: Set[Tuple[int, int]]) -> bool:
+        """Проверяет наличие плюсового пересечения."""
+        x, y = cell
+        directions = [(0, -1), (1, 0), (0, 1), (-1, 0)]  # Верх, право, низ, лево
+        return all((x + dx, y + dy) in cells for dx, dy in directions)
+    
     def validate_province(self, province_id: int) -> bool:
         """
         Проверяет корректность провинции.
