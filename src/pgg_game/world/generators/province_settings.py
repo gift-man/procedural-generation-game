@@ -12,24 +12,26 @@ class ProvinceGenerationConfig:
     max_province_count: int = 15
     
     # Настройки генерации
-    max_generation_attempts: int = 50
-    max_province_attempts: int = 100
+    max_generation_attempts: int = 5  # Уменьшаем количество попыток для более быстрой обратной связи
+    max_province_attempts: int = 50   # Уменьшаем для оптимизации
+    min_total_coverage: float = 1.0   # Требуем полное покрытие
     check_plus_intersection: bool = True
+    allow_uneven_sizes: bool = True   # Разрешаем неравномерные размеры
     
-  # Вероятности размеров провинций (будут заполнены из анализа острова)
+   # Вероятности размеров провинций
     size_probabilities: Dict[int, float] = field(default_factory=lambda: {
-        4: 0.0,
-        5: 0.0,
-        6: 0.0,
-        7: 0.0,
-        8: 0.0
+        4: 0.2,
+        5: 0.3,
+        6: 0.3,
+        7: 0.15,
+        8: 0.05
     })
     
     # Веса для выбора следующей клетки
     weights: Dict[str, float] = field(default_factory=lambda: {
-        'neighbor_count': 0.6,    # Увеличиваем вес соседей
-        'compactness': 0.3,       # Сохраняем важность компактности
-        'center_distance': 0.1    # Немного увеличиваем влияние расстояния
+        'neighbor_count': 0.7,    # Увеличиваем важность соседей
+        'compactness': 0.2,       # Уменьшаем важность компактности
+        'center_distance': 0.1    # Уменьшаем влияние расстояния
     })
     
     # Параметры качества генерации
