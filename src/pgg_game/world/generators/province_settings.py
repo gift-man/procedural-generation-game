@@ -8,8 +8,8 @@ class ProvinceGenerationConfig:
     # Базовые ограничения
     min_province_size: int = 4
     max_province_size: int = 8
-    min_provinces: int = 3
-    max_provinces: int = 20
+    min_province_count: int = 3  # Изменено с min_provinces
+    max_province_count: int = 20  # Изменено с max_provinces
     
     # Настройки генерации
     max_generation_attempts: int = 5

@@ -469,7 +469,7 @@ class MapSystem:
             # Проверяем критерии завершения
             remaining_ratio = len(land_cells) / initial_land_count
             if remaining_ratio < (1 - config.min_total_coverage):
-                if len(self.province_manager.provinces) >= config.min_provinces:
+                if len(self.province_manager.provinces) >= config.min_province_count:
                     break
                     
         # Распределяем оставшиеся клетки
@@ -479,40 +479,39 @@ class MapSystem:
         return self._verify_generation_quality(config)
     
     def _distribute_remaining_cells(self, land_cells: Set[Tuple[int, int]]) -> None:
-            """Распределяет оставшиеся клетки по существующим провинциям."""
-            while land_cells:
-                cell = land_cells.pop()
-                best_province = None
-                best_score = float('-inf')
-                
-                # Ищем лучшую провинцию для клетки
-                for pid in self.province_manager.provinces:
-                    province = self.province_manager.provinces[pid]
-                    if len(province.cells) >= self.province_manager.config.max_province_size:
-                        continue
-                        
-                    # Проверяем соседство
-                    x, y = cell
-                    neighbors = 0
-                    for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-                        neighbor = (x + dx, y + dy)
-                        if neighbor in province.cells:
-                            neighbors += 1
-                            
-                    if neighbors > 0:
-                        score = neighbors + (1.0 / len(province.cells))  # Предпочитаем меньшие провинции
-                        if score > best_score:
-                            best_score = score
-                            best_province = pid
-                            
-                # Добавляем к лучшей провинции или создаем новую
-                if best_province is not None:
-                    self.province_manager.add_cell_to_province(best_province, cell, force=True)
-                else:
-                    # Если нет подходящей провинции, создаем новую
-                    new_province = self.province_manager.create_province()
-                    self.province_manager.add_cell_to_province(new_province, cell, force=True)
+        """Распределяет оставшиеся клетки по существующим провинциям."""
+        while land_cells:
+            cell = next(iter(land_cells))
+            best_province = None
+            best_score = float('-inf')
+            
+            # Ищем лучшую провинцию для клетки
+            for province_id in self.province_manager.provinces:
+                province = self.province_manager.provinces[province_id]
+                if len(province.cells) >= self.province_manager.config.max_province_size:
+                    continue
                     
+                # Проверяем соседство
+                x, y = cell
+                neighbors = 0
+                for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                    neighbor = (x + dx, y + dy)
+                    if neighbor in province.cells:
+                        neighbors += 1
+                        
+                if neighbors > 0:
+                    score = neighbors - (len(province.cells) / self.province_manager.config.max_province_size)
+                    if score > best_score:
+                        best_score = score
+                        best_province = province_id
+                        
+            # Добавляем к лучшей провинции или создаем новую
+            if best_province is not None:
+                if self.province_manager.add_cell_to_province(best_province, cell):
+                    land_cells.remove(cell)
+            else:
+                land_cells.remove(cell)  # Пропускаем клетку, если нет подходящей провинции
+
     def _find_best_start_point(self, land_cells: Set[Tuple[int, int]], 
                             config: ProvinceGenerationConfig) -> Optional[Tuple[int, int]]:
         """
@@ -713,43 +712,78 @@ class MapSystem:
             free_neighbors_norm * weights['border_length']
         )
 
-    def _verify_generation_quality(self, config: ProvinceGenerationConfig) -> bool:
-        """
-        Проверяет качество сгенерированных провинций.
+def _verify_generation_quality(self, config: ProvinceGenerationConfig) -> bool:
+    """
+    Проверяет качество сгенерированных провинций.
+    
+    Args:
+        config: Настройки генерации
         
-        Args:
-            config: Настройки генерации
-            
-        Returns:
-            bool: True если качество приемлемо
-        """
-        # Проверяем количество провинций
-        if len(self.province_manager.provinces) < config.min_province_count:
+    Returns:
+        bool: True если качество приемлемо
+    """
+    # Проверяем количество провинций
+    if len(self.province_manager.provinces) < config.min_province_count:  # Изменено с min_province_count
+        return False
+        
+    # Проверяем размеры провинций
+    for province in self.province_manager.provinces.values():
+        if len(province.cells) < config.min_province_size:
+            return False
+        if len(province.cells) > config.max_province_size:
             return False
             
-        # Проверяем размеры провинций
-        for province in self.province_manager.provinces.values():
-            if len(province.cells) < config.min_province_size:
-                return False
-            if len(province.cells) > config.max_province_size:
+    # Проверяем связность провинций
+    for province_id, province in self.province_manager.provinces.items():
+        if not self._check_province_connectivity(province_id):
+            return False
+            
+    # Проверяем отсутствие плюсовых пересечений
+    if config.check_plus_intersection:
+        for y in range(GRID_HEIGHT):
+            for x in range(GRID_WIDTH):
+                cell = (x, y)
+                if cell in self.province_manager.cell_to_province:
+                    province_id = self.province_manager.cell_to_province[cell]
+                    if self.province_manager._would_create_plus_intersection(province_id, cell):
+                        return False
+                        
+    return True
+
+    def _try_generate_provinces(self, config: ProvinceGenerationConfig) -> bool:
+        """Пытается сгенерировать провинции."""
+        # Очищаем старые провинции
+        self.provinces.clear()
+        self.cell_to_province.clear()
+        self.province_manager = ProvinceManager(config=config)
+        
+        # Собираем все клетки суши
+        land_cells = set()
+        for y in range(GRID_HEIGHT):
+            for x in range(GRID_WIDTH):
+                if self.grid[y, x] == 1:
+                    land_cells.add((x, y))
+                    
+        initial_land_count = len(land_cells)
+        if initial_land_count == 0:
+            return False
+            
+        # Основной цикл генерации
+        while land_cells:
+            if not self._try_create_province(land_cells):
                 return False
                 
-        # Проверяем связность провинций
-        for province_id, province in self.province_manager.provinces.items():
-            if not self._check_province_connectivity(province_id):
-                return False
-                
-        # Проверяем отсутствие плюсовых пересечений
-        if config.check_plus_intersection:
-            for y in range(GRID_HEIGHT):
-                for x in range(GRID_WIDTH):
-                    cell = (x, y)
-                    if cell in self.province_manager.cell_to_province:
-                        province_id = self.province_manager.cell_to_province[cell]
-                        if self.province_manager._would_create_plus_intersection(province_id, cell):
-                            return False
-                            
-        return True
+            # Проверяем критерии завершения
+            remaining_ratio = len(land_cells) / initial_land_count
+            if remaining_ratio < (1 - config.min_total_coverage):
+                if len(self.province_manager.provinces) >= config.min_province_count:  # Изменено с min_province_count
+                    break
+                    
+        # Распределяем оставшиеся клетки
+        if land_cells:
+            self._distribute_remaining_cells(land_cells)
+            
+        return self._verify_generation_quality(config)
 
     def _check_province_connectivity(self, province_id: int) -> bool:
         """

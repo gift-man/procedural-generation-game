@@ -56,9 +56,11 @@ class ProvinceManager:
         self._reset_growth_attempts()
         return province_id
         
-    def add_cell_to_province(self, province_id: int, cell: Tuple[int, int], 
-                            force: bool = False) -> bool:
+    def add_cell_to_province(self, province_id: int, cell: Tuple[int, int], force: bool = False) -> bool:
         """Добавляет клетку в провинцию."""
+        if province_id not in self.provinces:
+            return False
+            
         if not self._increment_growth_attempts():
             return False
             
