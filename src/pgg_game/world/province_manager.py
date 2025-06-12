@@ -9,13 +9,30 @@ class ProvinceManager:
     """Управляет провинциями на карте."""
     
     def __init__(self, config: Optional[ProvinceGenerationConfig] = None):
-        """Инициализация менеджера провинций."""
+        """
+        Инициализация менеджера провинций.
+        
+        Args:
+            config: Настройки генерации провинций
+        """
         self.provinces: Dict[int, ProvinceData] = {}
         self.cell_to_province: Dict[Tuple[int, int], int] = {}
         self.next_province_id = 0
+        
+        # Устанавливаем конфигурацию
         self.config = config or ProvinceGenerationConfig()
         self.growth_attempts = 0
         self.max_growth_attempts = 100  # Предотвращаем бесконечный цикл
+        
+        # Проверяем наличие вероятностей размеров в конфигурации
+        if not hasattr(self.config, 'size_probabilities'):
+            self.config.size_probabilities = {
+                4: 0.20,  # 20% шанс для провинций размером 4
+                5: 0.25,  # 25% шанс для провинций размером 5
+                6: 0.25,  # 25% шанс для провинций размером 6
+                7: 0.20,  # 20% шанс для провинций размером 7
+                8: 0.10   # 10% шанс для провинций размером 8
+            }
         
     def _reset_growth_attempts(self):
         """Сбрасывает счетчик попыток роста."""
@@ -179,3 +196,30 @@ class ProvinceManager:
                     
         # Все клетки должны быть достижимы
         return len(visited) == len(province.cells)
+    def get_ideal_province_size(self) -> int:
+        """
+        Возвращает размер провинции на основе вероятностей из конфигурации.
+        
+        Returns:
+            int: Размер провинции
+        """
+        rand = random.random()
+        cumulative = 0.0
+        
+        # Используем вероятности из конфигурации
+        for size, prob in self.config.size_probabilities.items():
+            cumulative += prob
+            if rand <= cumulative:
+                return size
+                
+        # По умолчанию возвращаем средний размер
+        return 6
+    
+    def get_available_province_sizes(self) -> List[int]:
+        """
+        Возвращает список доступных размеров провинций.
+        
+        Returns:
+            List[int]: Список размеров провинций
+        """
+        return sorted(self.config.size_probabilities.keys())
