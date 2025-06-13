@@ -69,6 +69,19 @@ class MapGenerator:
         self.terrain_config = terrain_config or TerrainConfig()
         self.noise_gen = create_noise_generator(self.noise_config)
         
+        # Используем константы из конфига
+        self.width = GRID_WIDTH * TILE_SIZE
+        self.height = GRID_HEIGHT * TILE_SIZE
+        self.tile_size = TILE_SIZE
+        self.grid_width = GRID_WIDTH
+        self.grid_height = GRID_HEIGHT
+        
+        # Инициализация остальных полей
+        self.height_map = None
+        self.provinces = []
+        self.num_provinces = 10
+        self.surface = pygame.Surface((self.width, self.height))
+        self.surface.fill(COLORS['background'])
         self.province_grid: List[List[int]] = []
         self.terrain_grid: List[List[str]] = []
         
@@ -120,36 +133,130 @@ class MapGenerator:
         
         print("MapGenerator: Генерация карты завершена")
     
-    def _generate_height_map(self) -> List[List[float]]:
+    def _generate_height_map(self) -> bool:
         """
-        Генерирует карту высот используя настроенный генератор шума.
+        Генерация карты высот используя алгоритм Diamond-Square.
         
         Returns:
-            List[List[float]]: Карта высот
+            bool: True если генерация успешна, False иначе
         """
-        height_map = []
+        try:
+            # Устанавливаем random seed
+            random.seed()
+            
+            # Инициализация массива высот
+            size = max(self.width, self.height)
+            power = math.ceil(math.log2(size))
+            grid_size = 2**power + 1
+            
+            # Создаем массив с нулевыми значениями
+            self.height_map = [[0.0 for _ in range(grid_size)] for _ in range(grid_size)]
+            
+            # Задаем начальные значения по углам
+            self.height_map[0][0] = random.random()
+            self.height_map[0][grid_size-1] = random.random()
+            self.height_map[grid_size-1][0] = random.random()
+            self.height_map[grid_size-1][grid_size-1] = random.random()
+            
+            # Алгоритм Diamond-Square
+            step = grid_size - 1
+            half_step = step // 2
+            roughness = 0.6
+            
+            while step > 1:
+                # Diamond step
+                for y in range(0, grid_size-1, step):
+                    for x in range(0, grid_size-1, step):
+                        self._diamond_step(x, y, step, roughness)
+                
+                # Square step
+                for y in range(0, grid_size, half_step):
+                    for x in range((y + half_step) % step, grid_size, step):
+                        self._square_step(x, y, half_step, roughness)
+                
+                step = half_step
+                half_step = step // 2
+                roughness *= 0.5
+            
+            # Нормализация значений
+            self._normalize_height_map()
+            
+            return True
+            
+        except Exception as e:
+            print(f"Ошибка при генерации карты высот: {e}")
+            return False
+
+    def _diamond_step(self, x: int, y: int, step: int, roughness: float) -> None:
+        """
+        Diamond step алгоритма Diamond-Square.
         
-        for y in range(GRID_HEIGHT):
-            row = []
-            for x in range(GRID_WIDTH):
-                # Преобразуем координаты сетки в координаты шума
-                nx = x / GRID_WIDTH
-                ny = y / GRID_HEIGHT
-                
-                # Получаем базовое значение шума
-                value = self.noise_gen.noise2d(nx, ny)
-                
-                # Нормализуем значение от 0 до 1
-                value = (value + 1) * 0.5
-                
-                # Добавляем небольшую случайность
-                value += random.uniform(-0.05, 0.05)
-                value = max(0.0, min(1.0, value))
-                
-                row.append(value)
-            height_map.append(row)
+        Args:
+            x: Координата X
+            y: Координата Y
+            step: Размер шага
+            roughness: Коэффициент шероховатости
+        """
+        half = step // 2
         
-        return height_map
+        # Вычисляем среднее значение четырех углов
+        avg = (self.height_map[y][x] + 
+            self.height_map[y][x + step] + 
+            self.height_map[y + step][x] + 
+            self.height_map[y + step][x + step]) / 4.0
+        
+        # Добавляем случайное смещение
+        offset = (random.random() * 2 - 1) * roughness
+        
+        # Устанавливаем значение центральной точки
+        self.height_map[y + half][x + half] = avg + offset
+
+    def _square_step(self, x: int, y: int, step: int, roughness: float) -> None:
+        """
+        Square step алгоритма Diamond-Square.
+        
+        Args:
+            x: Координата X
+            y: Координата Y
+            step: Размер шага
+            roughness: Коэффициент шероховатости
+        """
+        total = 0.0
+        count = 0
+        
+        # Проверяем все четыре стороны
+        for dx, dy in [(-step, 0), (step, 0), (0, -step), (0, step)]:
+            new_x = x + dx
+            new_y = y + dy
+            
+            if (0 <= new_x < len(self.height_map[0]) and 
+                0 <= new_y < len(self.height_map)):
+                total += self.height_map[new_y][new_x]
+                count += 1
+        
+        # Вычисляем среднее и добавляем случайное смещение
+        avg = total / count
+        offset = (random.random() * 2 - 1) * roughness
+        
+        self.height_map[y][x] = avg + offset
+
+    def _normalize_height_map(self) -> None:
+        """Нормализация значений карты высот в диапазон [0, 1]."""
+        min_height = float('inf')
+        max_height = float('-inf')
+        
+        # Находим минимальное и максимальное значения
+        for row in self.height_map:
+            for height in row:
+                min_height = min(min_height, height)
+                max_height = max(max_height, height)
+        
+        # Нормализуем значения
+        height_range = max_height - min_height
+        if height_range > 0:
+            for y in range(len(self.height_map)):
+                for x in range(len(self.height_map[0])):
+                    self.height_map[y][x] = (self.height_map[y][x] - min_height) / height_range
     
     def _create_tile_component(self, x: int, y: int, color: Tuple[int, int, int]) -> RenderableComponent:
         """
