@@ -26,6 +26,9 @@ class ProvinceGenerationConfig:
     # Параметры генерации
     border_smoothing: int = 2  # Сглаживание границ
     max_attempts: int = 100    # Увеличиваем количество попыток
+    max_generation_attempts: int = 50  # Добавляем пропущенный параметр
+    check_plus_intersection: bool = False # Отключаем проверку плюсовых пересечений
+    min_total_coverage: float = 0.8  # Добавляем минимальное покрытие
     
     # Веса для оценки клеток
     weights: Dict[str, float] = field(default_factory=lambda: {
@@ -33,5 +36,6 @@ class ProvinceGenerationConfig:
         'center_distance': 0.3,    # Вес расстояния до центра
         'edge_penalty': 0.1,       # Уменьшаем штраф за края
         'direction': 0.1,          # Вес направления роста
-        'compactness': 0.4         # Добавляем вес компактности
+        'compactness': 0.4,        # Добавляем вес компактности
+        'border_length': 0.2       # Добавляем вес длины границы
     })

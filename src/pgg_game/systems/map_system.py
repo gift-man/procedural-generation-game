@@ -49,16 +49,10 @@ class MapSystem:
         self.resources = {}  # Словарь ресурсов
         self.world = None
         self.map_generated = False
-        self.province_manager = None  # Создаём менеджера провинций позже
         
-        # Загружаем настройки генерации
-        self.generation_settings = MapGenerationSettings()
-        
-        # Настройки генерации
-        self.min_province_size = self.generation_settings.min_province_size
-        self.max_province_size = self.generation_settings.max_province_size
-        self.min_island_size = self.generation_settings.min_total_size
-        self.max_island_size = self.generation_settings.min_total_size * 2
+        # Создаем менеджер провинций с настроенной конфигурацией
+        config = ProvinceGenerationConfig()
+        self.province_manager = ProvinceManager(config=config)
         
         # Настройки ресурсов
         self.resource_clusters = {
@@ -67,12 +61,9 @@ class MapSystem:
             ResourceType.WOOD: {'min_size': 4, 'chance': 0.35},
             ResourceType.FOOD: {'min_size': 1, 'chance': 1.0}
         }
-
+        
         # Создаем поверхность для карты
         self.surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-
-        # Создаем менеджер провинций
-        self.province_manager = ProvinceManager()
 
     def update(self, world: GameWorld) -> None:
         """
@@ -87,6 +78,49 @@ class MapSystem:
         if not self.map_generated:
             self.generate_map(world)
             self.map_generated = True
+
+    def _verify_island(self) -> bool:
+        """Проверяет валидность сгенерированного острова."""
+        # Подсчитываем размер острова
+        land_cells = np.sum(self.grid)
+        
+        # Проверяем минимальный размер
+        if land_cells < self.province_manager.config.min_provinces * self.province_manager.config.min_size * 2:
+            return False
+        
+        # Проверяем связность острова
+        visited = set()
+        start = None
+        
+        # Ищем первую клетку суши
+        for y in range(GRID_HEIGHT):
+            for x in range(GRID_WIDTH):
+                if self.grid[y, x] == 1:
+                    start = (x, y)
+                    break
+            if start:
+                break
+        
+        if not start:
+            return False
+        
+        # Проверяем связность через flood fill
+        queue = deque([start])
+        visited.add(start)
+        
+        while queue:
+            x, y = queue.popleft()
+            for dx, dy in [(0,1), (1,0), (0,-1), (-1,0)]:
+                nx, ny = x + dx, y + dy
+                if (0 <= nx < GRID_WIDTH and 
+                    0 <= ny < GRID_HEIGHT and 
+                    self.grid[ny, nx] == 1 and 
+                    (nx, ny) not in visited):
+                    visited.add((nx, ny))
+                    queue.append((nx, ny))
+        
+        # Все клетки суши должны быть достижимы
+        return len(visited) == land_cells    
     
     def generate_map(self, world: GameWorld) -> None:
         """Генерирует новую карту."""
@@ -95,15 +129,23 @@ class MapSystem:
             for retry in range(max_retries):
                 print(f"Попытка генерации {retry + 1}")
                 
-                # Генерируем остров из провинций
+                # 1. Сначала генерируем базовую форму острова
                 if self._generate_islands():
-                    # Создаем провинции
-                    if self._create_province_entities(world):
-                        # Генерируем ресурсы
-                        self._generate_resources()
-                        self.map_generated = True
-                        print("Генерация карты успешно завершена")
-                        return
+                    # 2. Пытаемся разделить на провинции
+                    if self.generate_provinces():
+                        # 3. Если удалось, создаем сущности
+                        if self._create_province_entities(world):
+                            # 4. Генерируем ресурсы
+                            self._generate_resources()
+                            self.map_generated = True
+                            print("Генерация карты успешно завершена")
+                            return
+                        else:
+                            print("Не удалось создать сущности провинций")
+                    else:
+                        print("Не удалось разделить остров на провинции")
+                else:
+                    print("Не удалось сгенерировать базовую форму острова")
                 
                 print(f"Попытка {retry + 1} не удалась")
                 
@@ -234,7 +276,7 @@ class MapSystem:
 
     def _generate_islands(self) -> bool:
         """
-        Генерирует остров из провинций.
+        Генерирует базовую форму острова.
         
         Returns:
             bool: True если генерация успешна
@@ -244,103 +286,50 @@ class MapSystem:
         # Очищаем сетку
         self.grid.fill(0)
         
-        # Определяем центр
+        # Определяем центр и начальный радиус
         center_x = GRID_WIDTH // 2
         center_y = GRID_HEIGHT // 2
+        initial_radius = min(GRID_WIDTH, GRID_HEIGHT) // 4
         
-        # Определяем количество провинций
-        province_count = random.randint(config.min_provinces, config.max_provinces)
-        provinces = []
+        # Создаем круглое основание острова
+        for y in range(GRID_HEIGHT):
+            for x in range(GRID_WIDTH):
+                dx = x - center_x
+                dy = y - center_y
+                distance = (dx * dx + dy * dy) ** 0.5
+                if distance <= initial_radius:
+                    self.grid[y, x] = 1
         
-        # Создаем начальные провинции по окружности
-        for i in range(province_count):
-            # Вычисляем позицию на окружности
-            angle = (2 * math.pi * i) / province_count
-            radius = config.initial_radius
-            x = int(center_x + radius * math.cos(angle))
-            y = int(center_y + radius * math.sin(angle))
-            
-            # Проверяем границы
-            x = max(config.edge_distance, min(x, GRID_WIDTH - config.edge_distance))
-            y = max(config.edge_distance, min(y, GRID_HEIGHT - config.edge_distance))
-            
-            # Создаем провинцию
-            province = {
-                'id': i,
-                'center': (x, y),
-                'cells': {(x, y)},
-                'size': random.randint(config.min_size, config.max_size),
-                'active': True,
-                'growth_direction': (math.cos(angle), math.sin(angle))
-            }
-            
-            provinces.append(province)
-            self.grid[y, x] = 1
-        
-        # Растим провинции
-        for step in range(config.growth_steps):
-            # Перемешиваем для случайного порядка роста
-            random.shuffle(provinces)
-            
-            for province in provinces:
-                if not province['active'] or len(province['cells']) >= province['size']:
-                    continue
-                
-                # Собираем кандидатов на рост
-                candidates = []
-                for cell in province['cells']:
-                    x, y = cell
-                    for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-                        new_x = x + dx
-                        new_y = y + dy
-                        
-                        # Проверяем границы и занятость
-                        if (config.edge_distance <= new_x < GRID_WIDTH - config.edge_distance and
-                            config.edge_distance <= new_y < GRID_HEIGHT - config.edge_distance and
-                            self.grid[new_y, new_x] == 0):
-                            
-                            # Считаем соседей
-                            neighbors = sum(1 for ddx, ddy in [(0, 1), (1, 0), (0, -1), (-1, 0)]
-                                        if (new_x + ddx, new_y + ddy) in province['cells'])
-                            
-                            if config.min_neighbors <= neighbors <= config.max_neighbors:
-                                # Оцениваем клетку
-                                score = self._evaluate_growth_cell(
-                                    new_x, new_y,
-                                    province,
-                                    config
-                                )
-                                candidates.append(((new_x, new_y), score))
-                
-                # Выбираем лучших кандидатов
-                if candidates:
-                    candidates.sort(key=lambda x: x[1], reverse=True)
-                    cells_to_add = candidates[:2]  # Берем до 2 лучших клеток
-                    
-                    for (new_x, new_y), _ in cells_to_add:
-                        if len(province['cells']) < province['size']:
-                            province['cells'].add((new_x, new_y))
-                            self.grid[new_y, new_x] = 1
-        
-        # Соединяем провинции
-        self._connect_close_provinces(provinces, config)
+        # Добавляем случайные отклонения по краям для более естественной формы
+        for _ in range(3):  # 3 прохода деформации
+            new_grid = self.grid.copy()
+            for y in range(1, GRID_HEIGHT-1):
+                for x in range(1, GRID_WIDTH-1):
+                    if self.grid[y, x] == 1:
+                        for dx, dy in [(0,1), (1,0), (0,-1), (-1,0)]:
+                            if random.random() < 0.3:  # 30% шанс расширения
+                                new_x = x + dx
+                                new_y = y + dy
+                                if 0 <= new_x < GRID_WIDTH and 0 <= new_y < GRID_HEIGHT:
+                                    new_grid[new_y, new_x] = 1
+            self.grid = new_grid
         
         # Сглаживаем границы
-        for _ in range(config.border_smoothing):
+        for _ in range(2):
             new_grid = self.grid.copy()
-            for y in range(1, GRID_HEIGHT - 1):
-                for x in range(1, GRID_WIDTH - 1):
+            for y in range(1, GRID_HEIGHT-1):
+                for x in range(1, GRID_WIDTH-1):
                     neighbors = sum(self.grid[y+dy, x+dx] for dx, dy in 
-                                [(0, 1), (1, 0), (0, -1), (-1, 0)])
+                                [(0,1), (1,0), (0,-1), (-1,0)])
                     if neighbors >= 3:
                         new_grid[y, x] = 1
                     elif neighbors <= 1:
                         new_grid[y, x] = 0
             self.grid = new_grid
         
-        # Проверяем результат
+        # Проверяем размер острова
         land_cells = np.sum(self.grid)
-        min_required = sum(p['size'] for p in provinces) * 0.8  # 80% от целевого размера
+        min_required = config.min_provinces * config.min_size * 2
         return land_cells >= min_required
     
     def _evaluate_growth_cell(self, x: int, y: int, province: dict, config: ProvinceGenerationConfig) -> float:
@@ -791,15 +780,24 @@ class MapSystem:
         land_count = sum(1 for y in range(GRID_HEIGHT) for x in range(GRID_WIDTH) 
                         if self.grid[y, x] == 1)
         
-        # Проверяем минимальный размер острова
-        if land_count < self.min_island_size:
-            print(f"Остров слишком мал (нужно {self.min_island_size}, есть {land_count})")
+        if land_count == 0:
+            print("Отсутствуют клетки суши")
             return False
         
-        # Создаем новую конфигурацию с адаптированными параметрами
-        config = ProvinceGenerationConfig()
-        config.min_province_size = max(4, land_count // 20)  # Не менее 4 клеток
-        config.max_province_size = min(8, land_count // 5)   # Не более 20% острова
+        # Адаптируем размеры провинций под размер острова
+        config = self.province_manager.config
+        min_provinces = max(3, land_count // 25)  # Примерное количество провинций
+        max_provinces = min(8, land_count // 15)  # Не более 8 провинций
+        
+        if min_provinces > max_provinces:
+            min_provinces = max_provinces
+        
+        config.min_provinces = min_provinces
+        config.max_provinces = max_provinces
+        config.min_size = max(4, land_count // (max_provinces * 2))
+        config.max_size = min(25, land_count // min_provinces)
+        
+        print(f"Настройки провинций: мин={min_provinces}, макс={max_provinces}, размер={config.min_size}-{config.max_size}")
         
         # Пытаемся сгенерировать провинции
         for attempt in range(config.max_generation_attempts):
