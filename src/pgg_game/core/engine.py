@@ -52,6 +52,22 @@ class Engine:
         self.event_system.subscribe('start_game', self._handle_start_game)
         self.event_system.subscribe('open_settings', self._handle_open_settings)
         self.event_system.subscribe('quit_game', self._handle_quit_game)
+        """Инициализация игрового движка."""
+        try:
+            pygame.init()
+            self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+            pygame.display.set_caption(WINDOW_TITLE)
+            self.clock = pygame.time.Clock()
+            self.running = True
+            
+            # Создаем генератор карты
+            self.map_generator = MapGenerator(SCREEN_WIDTH, SCREEN_HEIGHT)
+            if not self.map_generator.generate():
+                raise RuntimeError("Не удалось сгенерировать карту")
+                
+        except Exception as e:
+            print(f"Ошибка при инициализации движка: {str(e)}")
+            raise
     
     def run(self) -> None:
         """Главный игровой цикл."""

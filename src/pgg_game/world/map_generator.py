@@ -1,9 +1,11 @@
 """
 Модуль генерации игровой карты с использованием процедурной генерации.
 """
+import pygame  # Добавляем импорт pygame
 import random
-import pygame
-from typing import List, Tuple, Dict, Set, Optional
+import math
+from typing import List, Optional, Tuple
+from ..components.renderable import RenderableComponent, ShapeType
 from dataclasses import dataclass
 import numpy
 import math
@@ -12,7 +14,7 @@ from ..world.province_manager import ProvinceManager
 from .noise_generator import NoiseConfig, create_noise_generator
 from ..world.game_world import GameWorld
 from ..components.transform import TransformComponent
-from ..components.renderable import RenderableComponent, ShapeType
+from ..components.renderable import RenderableComponent, ShapeType  # Теперь ShapeType доступен
 from ..components.province_info import ProvinceInfoComponent
 from ..components.resource import ResourceComponent, ResourceType
 from ..config import COLORS, TILE_SIZE, GRID_WIDTH, GRID_HEIGHT
@@ -149,6 +151,26 @@ class MapGenerator:
         
         return height_map
     
+    def _create_tile_component(self, x: int, y: int, color: Tuple[int, int, int]) -> RenderableComponent:
+        """
+        Создает компонент отрисовки для тайла.
+
+        Args:
+            x: X координата
+            y: Y координата
+            color: RGB цвет тайла
+
+        Returns:
+            RenderableComponent: Компонент отрисовки
+        """
+        return RenderableComponent(
+            shape_type=ShapeType.RECTANGLE,
+            color=color,
+            position=(x * self.tile_size, y * self.tile_size),
+            size=(self.tile_size, self.tile_size),
+            filled=True,
+            layer=1
+        )
     def _determine_terrain_type(self, height: float) -> str:
         """
         Определяет тип местности по высоте.

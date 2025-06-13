@@ -1,93 +1,91 @@
-"""Компонент для отображаемых объектов."""
+from enum import Enum
 from typing import Tuple, Optional
 import pygame
 
+class ShapeType(Enum):
+    """Типы фигур для отрисовки."""
+    RECTANGLE = "rectangle"
+    CIRCLE = "circle"
+    LINE = "line"
+    POLYGON = "polygon"
+
 class RenderableComponent:
-    """Компонент для объектов, которые можно отрисовать."""
+    """Компонент для отрисовки объектов."""
     
-    def __init__(
-        self,
-        color: Tuple[int, int, int],
-        width: int,
-        height: int,
-        alpha: int = 255,
-        border_width: int = 0,
-        border_color: Optional[Tuple[int, int, int]] = None,
-        layer: int = 0
-    ):
+    def __init__(self, 
+                 shape_type: ShapeType,
+                 color: Tuple[int, int, int],
+                 size: Tuple[int, int] = (0, 0),
+                 position: Tuple[int, int] = (0, 0),
+                 filled: bool = True,
+                 width: int = 1,
+                 layer: int = 0):
         """
         Инициализация компонента отрисовки.
 
         Args:
-            color: RGB цвет заливки
-            width: Ширина объекта
-            height: Высота объекта
-            alpha: Прозрачность (0-255)
-            border_width: Толщина границы
-            border_color: RGB цвет границы
-            layer: Слой отрисовки (чем больше, тем выше)
+            shape_type: Тип фигуры (из ShapeType)
+            color: RGB цвет
+            size: Размер (ширина, высота)
+            position: Позиция (x, y)
+            filled: Заполнять фигуру или нет
+            width: Толщина линии для незаполненных фигур
+            layer: Слой отрисовки (больше = выше)
         """
+        self.shape_type = shape_type
         self.color = color
+        self.size = size
+        self.position = position
+        self.filled = filled
         self.width = width
-        self.height = height
-        self.alpha = alpha
-        self.border_width = border_width
-        self.border_color = border_color
         self.layer = layer
+        self.visible = True
+        self._surface: Optional[pygame.Surface] = None
         
-        # Создаем поверхность для отрисовки
-        self.surface = pygame.Surface((width, height), pygame.SRCALPHA)
-        
-        # Заливаем основным цветом
-        pygame.draw.rect(
-            self.surface,
-            (*color, alpha),
-            pygame.Rect(0, 0, width, height)
-        )
-        
-        # Если есть граница, рисуем её
-        if border_width > 0 and border_color is not None:
-            pygame.draw.rect(
-                self.surface,
-                (*border_color, alpha),
-                pygame.Rect(0, 0, width, height),
-                border_width
-            )
-    
-    def update_color(self, color: Tuple[int, int, int]) -> None:
+    def render(self, surface: pygame.Surface) -> None:
         """
-        Обновляет цвет объекта.
+        Отрисовка компонента.
 
         Args:
-            color: Новый RGB цвет
+            surface: Поверхность для отрисовки
         """
-        self.color = color
-        # Перерисовываем поверхность
-        self.surface.fill((*color, self.alpha))
-        # Если есть граница, перерисовываем её
-        if self.border_width > 0 and self.border_color is not None:
-            pygame.draw.rect(
-                self.surface,
-                (*self.border_color, self.alpha),
-                pygame.Rect(0, 0, self.width, self.height),
-                self.border_width
-            )
+        if not self.visible:
+            return
+            
+        x, y = self.position
+        width, height = self.size
+        
+        if self.shape_type == ShapeType.RECTANGLE:
+            if self.filled:
+                pygame.draw.rect(surface, self.color, (x, y, width, height))
+            else:
+                pygame.draw.rect(surface, self.color, (x, y, width, height), self.width)
+                
+        elif self.shape_type == ShapeType.CIRCLE:
+            radius = min(width, height) // 2
+            center = (x + radius, y + radius)
+            if self.filled:
+                pygame.draw.circle(surface, self.color, center, radius)
+            else:
+                pygame.draw.circle(surface, self.color, center, radius, self.width)
+                
+        elif self.shape_type == ShapeType.LINE:
+            end_pos = (x + width, y + height)
+            pygame.draw.line(surface, self.color, self.position, end_pos, self.width)
+            
+        elif self.shape_type == ShapeType.POLYGON:
+            if isinstance(self._surface, list):  # Если points задан как список точек
+                if self.filled:
+                    pygame.draw.polygon(surface, self.color, self._surface)
+                else:
+                    pygame.draw.polygon(surface, self.color, self._surface, self.width)
     
-    def set_alpha(self, alpha: int) -> None:
+    def set_points(self, points: list) -> None:
         """
-        Устанавливает прозрачность объекта.
+        Установка точек для полигона.
 
         Args:
-            alpha: Значение прозрачности (0-255)
+            points: Список точек [(x1, y1), (x2, y2), ...]
         """
-        self.alpha = max(0, min(255, alpha))
-        self.surface.set_alpha(self.alpha)
-    
-    def get_rect(self) -> pygame.Rect:
-        """
-        Получает прямоугольник объекта.
-
-        Returns:
-            pygame.Rect: Прямоугольник объекта
-        """
-        return self.surface.get_rect()
+        if self.shape_type == ShapeType.POLYGON:
+            self._surface = points
