@@ -10,7 +10,14 @@ class ProvinceGenerationConfig:
     max_province_size: int = 8
     min_province_count: int = 3
     max_province_count: int = 15
-    
+    """Настройки генерации провинций."""
+    min_size: int = 4          # Минимальный размер провинции
+    max_size: int = 8          # Максимальный размер провинции
+    min_provinces: int = 8     # Минимальное количество провинций
+    max_provinces: int = 15    # Максимальное количество провинций
+    spacing: int = 2           # Расстояние между провинциями
+    growth_steps: int = 3      # Количество шагов роста провинции
+    border_smoothing: int = 2  # Количество проходов сглаживания
     # Настройки генерации
     max_generation_attempts: int = 5  # Уменьшаем количество попыток для более быстрой обратной связи
     max_province_attempts: int = 50   # Уменьшаем для оптимизации

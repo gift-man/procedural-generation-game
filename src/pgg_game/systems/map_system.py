@@ -18,7 +18,7 @@ except ImportError:
 
 
 from ..world.generators.island_analyzer import IslandAnalyzer
-
+from ..world.generators.map_generation_settings import MapGenerationSettings
 from ..config import COLORS, RENDER_LAYERS
 from ..world.generators.province_settings import ProvinceGenerationConfig
 from ..world.province_manager import ProvinceManager
@@ -50,11 +50,15 @@ class MapSystem:
         self.world = None
         self.map_generated = False
         self.province_manager = None  # Создаём менеджера провинций позже
+        
+        # Загружаем настройки генерации
+        self.generation_settings = MapGenerationSettings()
+        
         # Настройки генерации
-        self.min_province_size = 4
-        self.max_province_size = 8
-        self.min_island_size = 40
-        self.max_island_size = 80
+        self.min_province_size = self.generation_settings.min_province_size
+        self.max_province_size = self.generation_settings.max_province_size
+        self.min_island_size = self.generation_settings.min_total_size
+        self.max_island_size = self.generation_settings.min_total_size * 2
         
         # Настройки ресурсов
         self.resource_clusters = {
@@ -69,6 +73,7 @@ class MapSystem:
 
         # Создаем менеджер провинций
         self.province_manager = ProvinceManager()
+
     def update(self, world: GameWorld) -> None:
         """
         Обновление состояния карты.
@@ -86,16 +91,16 @@ class MapSystem:
     def generate_map(self, world: GameWorld) -> None:
         """Генерирует новую карту."""
         try:
-            max_retries = 3  # Максимальное количество полных перезапусков генерации
+            max_retries = 5  # Увеличиваем количество попыток
             for retry in range(max_retries):
                 # 1. Очищаем карту
                 self.grid.fill(0)
                 self.provinces.clear()
                 self.resources.clear()
                 self.cell_to_province.clear()
-                self.province_manager = ProvinceManager()  # Пересоздаём менеджера
+                self.province_manager = ProvinceManager()
                 
-                # 2. Генерируем основной остров
+                # 2. Генерируем остров из провинций
                 self._generate_islands()
                 
                 # 3. Проверяем количество суши
@@ -104,31 +109,83 @@ class MapSystem:
                     print(f"Попытка {retry + 1}: Слишком мало суши")
                     continue
                 
-                # 4. Генерируем провинции с таймаутом
-                success = self._generate_with_timeout(3.0)  # Уменьшаем таймаут до 3 секунд
-                if not success:
-                    print(f"Попытка {retry + 1}: Не удалось сгенерировать провинции")
+                # 4. Создаем провинции
+                provinces = self._create_initial_provinces(world)
+                if not provinces:
+                    print(f"Попытка {retry + 1}: Не удалось создать провинции")
                     continue
                 
-                # 5. Проверяем результат
-                if not self._verify_final_state():
-                    print(f"Попытка {retry + 1}: Результат не прошёл проверку")
-                    continue
-                
-                # 6. Генерация успешна
-                self._update_province_mapping()
+                # 5. Генерируем ресурсы
                 self._generate_resources()
                 self._create_province_entities(world)
                 self.map_generated = True
                 return
                 
-            # Если все попытки неудачны
             raise RuntimeError("Не удалось сгенерировать карту после всех попыток")
             
         except Exception as e:
             print(f"Ошибка при генерации карты: {e}")
             raise
 
+    def _flood_fill(self, start_x: int, start_y: int) -> Set[Tuple[int, int]]:
+        """Находит все связанные клетки суши, начиная с заданной точки."""
+        cells = set()
+        queue = [(start_x, start_y)]
+        
+        while queue:
+            x, y = queue.pop(0)
+            if (x, y) in cells:
+                continue
+                
+            if (0 <= x < GRID_WIDTH and 
+                0 <= y < GRID_HEIGHT and 
+                self.grid[y, x] == 1):
+                cells.add((x, y))
+                
+                for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                    queue.append((x + dx, y + dy))
+        
+        return cells
+    
+    def _create_initial_provinces(self, world: GameWorld) -> List[Dict]:
+        """Создает начальные провинции на основе сгенерированной карты."""
+        provinces = []
+        
+        # Находим все компоненты связности в сетке (острова)
+        visited = set()
+        for y in range(GRID_HEIGHT):
+            for x in range(GRID_WIDTH):
+                if self.grid[y, x] == 1 and (x, y) not in visited:
+                    # Нашли новую провинцию
+                    province_cells = self._flood_fill(x, y)
+                    if len(province_cells) >= 4:  # Минимальный размер провинции
+                        visited.update(province_cells)
+                        
+                        # Создаем сущность провинции
+                        province_id = world.create_entity()
+                        
+                        # Находим центр провинции
+                        center_x = sum(x for x, _ in province_cells) // len(province_cells)
+                        center_y = sum(y for _, y in province_cells) // len(province_cells)
+                        
+                        # Создаем компоненты
+                        transform = TransformComponent(x=center_x * TILE_SIZE, y=center_y * TILE_SIZE)
+                        renderable = RenderableComponent(color=COLORS['province_neutral'])
+                        province_info = ProvinceInfoComponent(name=f"P{len(provinces)}")
+                        
+                        # Добавляем компоненты
+                        world.add_component(province_id, transform)
+                        world.add_component(province_id, renderable)
+                        world.add_component(province_id, province_info)
+                        
+                        provinces.append({
+                            'id': province_id,
+                            'cells': province_cells,
+                            'center': (center_x, center_y)
+                        })
+        
+        return provinces
+    
     def _verify_final_state(self) -> bool:
         """Проверяет финальное состояние карты."""
         if not self.province_manager.provinces:
@@ -191,32 +248,105 @@ class MapSystem:
 
     def _generate_islands(self) -> None:
         """Генерирует острова на карте."""
+        settings = self.generation_settings
+        
         # Центр карты
         center_x = GRID_WIDTH // 2
         center_y = GRID_HEIGHT // 2
         
-        # Генерируем основной остров
-        island_size = random.randint(self.min_island_size, self.max_island_size)
-        cells = set()
-        
-        # Начинаем с центральной точки
-        cells.add((center_x, center_y))
-        
-        # Расширяем остров
-        while len(cells) < island_size:
-            x, y = random.choice(list(cells))
-            for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-                new_x, new_y = x + dx, y + dy
-                if (0 < new_x < GRID_WIDTH - 1 and 
-                    0 < new_y < GRID_HEIGHT - 1 and
-                    (new_x, new_y) not in cells):
-                    cells.add((new_x, new_y))
-                    break
-        
-        # Применяем остров на сетку
-        for x, y in cells:
+        # Создаем начальные провинции вокруг центра
+        provinces = []
+        for i in range(settings.initial_provinces):
+            angle = (2 * math.pi * i) / settings.initial_provinces
+            r = GRID_WIDTH // 6  # Радиус размещения
+            x = int(center_x + r * math.cos(angle))
+            y = int(center_y + r * math.sin(angle))
+            
+            # Убеждаемся, что координаты в пределах карты
+            x = max(2, min(x, GRID_WIDTH - 3))
+            y = max(2, min(y, GRID_HEIGHT - 3))
+            
+            province = {
+                'id': i,
+                'center': (x, y),
+                'cells': {(x, y)},
+                'active': True
+            }
+            provinces.append(province)
             self.grid[y, x] = 1
-    
+        
+        # Растим провинции
+        for _ in range(settings.growth_steps):
+            active_provinces = [p for p in provinces if p['active']]
+            if not active_provinces:
+                break
+                
+            for province in active_provinces:
+                growth_attempts = 0
+                while growth_attempts < settings.max_growth_attempts:
+                    if random.random() > settings.growth_chance:
+                        continue
+                        
+                    # Собираем возможные клетки для роста
+                    candidates = set()
+                    for x, y in province['cells']:
+                        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                            new_x, new_y = x + dx, y + dy
+                            if (2 <= new_x < GRID_WIDTH - 2 and 
+                                2 <= new_y < GRID_HEIGHT - 2 and
+                                self.grid[new_y, new_x] == 0):
+                                candidates.add((new_x, new_y))
+                    
+                    if not candidates:
+                        province['active'] = False
+                        break
+                        
+                    # Выбираем лучшую клетку
+                    best_cell = None
+                    best_score = float('-inf')
+                    
+                    for x, y in candidates:
+                        # Считаем соседей
+                        neighbors = sum(1 for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]
+                                    if (x + dx, y + dy) in province['cells'])
+                        
+                        # Расстояние до центра
+                        cx, cy = province['center']
+                        dist = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
+                        dist_score = 1.0 / (1.0 + dist)
+                        
+                        # Общий счет
+                        score = (neighbors * settings.weights['neighbor_count'] +
+                            dist_score * settings.weights['center_distance'])
+                        
+                        if score > best_score:
+                            best_score = score
+                            best_cell = (x, y)
+                    
+                    if best_cell:
+                        province['cells'].add(best_cell)
+                        self.grid[best_cell[1], best_cell[0]] = 1
+                    
+                    growth_attempts += 1
+                    
+                    # Проверяем размер провинции
+                    if len(province['cells']) >= settings.max_province_size:
+                        province['active'] = False
+                        break
+        
+        # Сглаживаем границы
+        for _ in range(settings.smoothing_passes):
+            new_grid = self.grid.copy()
+            for y in range(1, GRID_HEIGHT - 1):
+                for x in range(1, GRID_WIDTH - 1):
+                    neighbors = sum(self.grid[y+dy, x+dx] for dx, dy in 
+                                [(0, 1), (1, 0), (0, -1), (-1, 0), 
+                                (1, 1), (1, -1), (-1, 1), (-1, -1)])
+                    if neighbors >= 5:
+                        new_grid[y, x] = 1
+                    elif neighbors <= 3:
+                        new_grid[y, x] = 0
+            self.grid = new_grid
    
     
     def _generate_resources(self) -> None:
