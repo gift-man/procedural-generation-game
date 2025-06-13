@@ -22,54 +22,42 @@ class Engine:
     
     def __init__(self):
         """Инициализация движка."""
-        pygame.init()
-        
-        # Создаем окно
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption(WINDOW_TITLE)
-        
-        # Инициализируем часы
-        self.clock = pygame.time.Clock()
-        
-        # Создаем системы
-        self.event_system = EventSystem()
-        self.world = GameWorld()
-        self.map_system = MapSystem()
-        self.ui_system = UISystem(self.screen, self.event_system)
-        
-        # Состояние игры
-        self.state = GameState.MENU
-        self.running = True
-        
-        # Фон игры
-        self.background_color = (30, 40, 50)  # Темно-синий фон вместо черного
-        
-        # Для подсчета FPS
-        self.fps_font = pygame.font.Font(None, 24)
-        self.fps_counter: Optional[pygame.Surface] = None
-        
-        # Подписываемся на события
-        self.event_system.subscribe('start_game', self._handle_start_game)
-        self.event_system.subscribe('open_settings', self._handle_open_settings)
-        self.event_system.subscribe('quit_game', self._handle_quit_game)
-      
-    
-        """Инициализация игрового движка."""
         try:
             # Инициализация pygame
             pygame.init()
+            
+            # Создаем окно
             self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
             pygame.display.set_caption(WINDOW_TITLE)
+            
+            # Инициализируем часы
             self.clock = pygame.time.Clock()
+            
+            # Создаем системы
+            self.event_system = EventSystem()
+            self.world = GameWorld()
+            self.map_system = MapSystem()
+            self.ui_system = UISystem(self.screen, self.event_system)
+            
+            # Состояние игры
+            self.state = GameState.MENU
             self.running = True
             
-            # Инициализация генератора карты
-            self.map_generator = MapGenerator(SCREEN_WIDTH, SCREEN_HEIGHT)
+            # Фон игры
+            self.background_color = (30, 40, 50)
             
-            # Генерация карты
-            if not self.map_generator.generate():
-                raise RuntimeError("Не удалось сгенерировать карту")
-                
+            # Для подсчета FPS
+            self.fps_font = pygame.font.Font(None, 24)
+            self.fps_counter: Optional[pygame.Surface] = None
+            
+            # Подписываемся на события
+            self.event_system.subscribe('start_game', self._handle_start_game)
+            self.event_system.subscribe('open_settings', self._handle_open_settings)
+            self.event_system.subscribe('quit_game', self._handle_quit_game)
+            
+            # Инициализируем генератор карты
+            self.map_generator = MapGenerator()
+            
         except Exception as e:
             print(f"Ошибка при инициализации движка: {e}")
             raise

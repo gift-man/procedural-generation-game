@@ -86,22 +86,23 @@ class MapGenerator:
         self.terrain_grid: List[List[str]] = []
         
         # Ресурсы для разных типов местности
+            # Ресурсы для разных типов местности
         self.terrain_resources = {
             TerrainType.PLAINS: {
-                ResourceType.FOOD: (5, 10),
-                ResourceType.GOLD: (1, 3)
+                ResourceType.FOOD: (5, 10),  # Основной ресурс равнин - еда
+                ResourceType.GOLD: (1, 3)    # Редкий ресурс равнин - золото
             },
             TerrainType.FOREST: {
-                ResourceType.WOOD: (8, 12),
-                ResourceType.FOOD: (3, 6)
+                ResourceType.WOOD: (8, 12),  # Основной ресурс леса - дерево
+                ResourceType.FOOD: (3, 6)    # Дополнительный ресурс леса - еда
             },
             TerrainType.MOUNTAINS: {
-                ResourceType.STONE: (8, 12),
-                ResourceType.IRON: (5, 8)
+                ResourceType.STONE: (8, 12), # Основной ресурс гор - камень
+                ResourceType.GOLD: (4, 8)    # Дополнительный ресурс гор - золото (больше чем в холмах)
             },
             TerrainType.HILLS: {
-                ResourceType.STONE: (4, 7),
-                ResourceType.GOLD: (3, 6)
+                ResourceType.STONE: (4, 7),  # Основной ресурс холмов - камень (меньше чем в горах)
+                ResourceType.GOLD: (3, 6)    # Дополнительный ресурс холмов - золото
             }
         }
 
@@ -142,7 +143,7 @@ class MapGenerator:
         """
         try:
             # Устанавливаем random seed
-            random.seed()
+            random.seed(None)  # Использует системное время как seed
             
             # Инициализация массива высот
             size = max(self.width, self.height)
@@ -356,11 +357,17 @@ class MapGenerator:
         
         # Добавляем ресурсы
         resource_component = ResourceComponent()
+        resource_component.amounts = {}
+        resource_component.production = {}
+
         if terrain_type in self.terrain_resources:
+            # Добавляем ресурсы в зависимости от типа местности
             for resource_type, (min_amount, max_amount) in self.terrain_resources[terrain_type].items():
                 amount = random.randint(min_amount, max_amount)
-                resource_component.amounts[resource_type] = amount
-                resource_component.production[resource_type] = amount // 2
+                # Проверяем, что ресурс есть в списке доступных
+                if resource_type in ResourceType:
+                    resource_component.amounts[resource_type] = amount
+                    resource_component.production[resource_type] = amount // 2
         
         # Добавляем все компоненты к сущности
         world.add_component(province_id, transform)
