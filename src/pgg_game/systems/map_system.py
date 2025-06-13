@@ -241,23 +241,22 @@ class MapSystem:
         """
         config = self.province_manager.config
         
-        # 1. Очищаем сетку
+        # Очищаем сетку
         self.grid.fill(0)
         
-        # 2. Создаем начальные провинции по кругу от центра
+        # Определяем центр
         center_x = GRID_WIDTH // 2
         center_y = GRID_HEIGHT // 2
+        
+        # Определяем количество провинций
+        province_count = random.randint(config.min_provinces, config.max_provinces)
         provinces = []
         
-        # Определяем количество начальных провинций
-        province_count = random.randint(config.min_provinces, config.max_provinces)
-        
+        # Создаем начальные провинции по окружности
         for i in range(province_count):
-            # Размещаем провинции по кругу
+            # Вычисляем позицию на окружности
             angle = (2 * math.pi * i) / province_count
             radius = config.initial_radius
-            
-            # Вычисляем позицию
             x = int(center_x + radius * math.cos(angle))
             y = int(center_y + radius * math.sin(angle))
             
@@ -271,43 +270,62 @@ class MapSystem:
                 'center': (x, y),
                 'cells': {(x, y)},
                 'size': random.randint(config.min_size, config.max_size),
-                'grown': False
+                'active': True,
+                'growth_direction': (math.cos(angle), math.sin(angle))
             }
             
             provinces.append(province)
             self.grid[y, x] = 1
         
-        # 3. Растим провинции пошагово
-        for _ in range(config.growth_steps):
-            # Перемешиваем провинции для случайного порядка роста
+        # Растим провинции
+        for step in range(config.growth_steps):
+            # Перемешиваем для случайного порядка роста
             random.shuffle(provinces)
             
             for province in provinces:
-                if len(province['cells']) >= province['size']:
-                    province['grown'] = True
+                if not province['active'] or len(province['cells']) >= province['size']:
                     continue
+                
+                # Собираем кандидатов на рост
+                candidates = []
+                for cell in province['cells']:
+                    x, y = cell
+                    for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                        new_x = x + dx
+                        new_y = y + dy
+                        
+                        # Проверяем границы и занятость
+                        if (config.edge_distance <= new_x < GRID_WIDTH - config.edge_distance and
+                            config.edge_distance <= new_y < GRID_HEIGHT - config.edge_distance and
+                            self.grid[new_y, new_x] == 0):
+                            
+                            # Считаем соседей
+                            neighbors = sum(1 for ddx, ddy in [(0, 1), (1, 0), (0, -1), (-1, 0)]
+                                        if (new_x + ddx, new_y + ddy) in province['cells'])
+                            
+                            if config.min_neighbors <= neighbors <= config.max_neighbors:
+                                # Оцениваем клетку
+                                score = self._evaluate_growth_cell(
+                                    new_x, new_y,
+                                    province,
+                                    config
+                                )
+                                candidates.append(((new_x, new_y), score))
+                
+                # Выбираем лучших кандидатов
+                if candidates:
+                    candidates.sort(key=lambda x: x[1], reverse=True)
+                    cells_to_add = candidates[:2]  # Берем до 2 лучших клеток
                     
-                # Собираем возможные клетки для роста
-                candidates = self._get_growth_candidates(province, config)
-                if not candidates:
-                    continue
-                
-                # Выбираем лучшие клетки и добавляем их
-                best_cells = self._select_best_cells(
-                    candidates, 
-                    province, 
-                    min(3, province['size'] - len(province['cells'])),
-                    config
-                )
-                
-                for cell in best_cells:
-                    province['cells'].add(cell)
-                    self.grid[cell[1], cell[0]] = 1
+                    for (new_x, new_y), _ in cells_to_add:
+                        if len(province['cells']) < province['size']:
+                            province['cells'].add((new_x, new_y))
+                            self.grid[new_y, new_x] = 1
         
-        # 4. Соединяем близкие провинции
-        self._connect_provinces(provinces, config)
+        # Соединяем провинции
+        self._connect_close_provinces(provinces, config)
         
-        # 5. Сглаживаем границы
+        # Сглаживаем границы
         for _ in range(config.border_smoothing):
             new_grid = self.grid.copy()
             for y in range(1, GRID_HEIGHT - 1):
@@ -320,11 +338,117 @@ class MapSystem:
                         new_grid[y, x] = 0
             self.grid = new_grid
         
-        # 6. Проверяем результат
-        land_count = np.sum(self.grid)
-        min_required = config.min_provinces * config.min_size
-        return land_count >= min_required
-   
+        # Проверяем результат
+        land_cells = np.sum(self.grid)
+        min_required = sum(p['size'] for p in provinces) * 0.8  # 80% от целевого размера
+        return land_cells >= min_required
+    
+    def _evaluate_growth_cell(self, x: int, y: int, province: dict, config: ProvinceGenerationConfig) -> float:
+        """
+        Оценивает клетку для роста провинции.
+        
+        Args:
+            x: Координата X
+            y: Координата Y
+            province: Данные провинции
+            config: Настройки генерации
+            
+        Returns:
+            float: Оценка клетки
+        """
+        # Считаем соседей
+        neighbors = sum(1 for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]
+                    if (x + dx, y + dy) in province['cells'])
+        neighbor_score = neighbors / 4  # Нормализуем
+
+        # Расстояние до центра
+        center_x, center_y = province['center']
+        distance = ((x - center_x) ** 2 + (y - center_y) ** 2) ** 0.5
+        distance_score = 1.0 / (1.0 + distance / config.max_radius)
+
+        # Оценка направления роста
+        dx = x - center_x
+        dy = y - center_y
+        if distance > 0:
+            direction = (dx / distance, dy / distance)
+            direction_score = (direction[0] * province['growth_direction'][0] + 
+                            direction[1] * province['growth_direction'][1] + 1) / 2
+        else:
+            direction_score = 1.0
+
+        # Штраф за близость к краю
+        edge_dist = min(x, y, GRID_WIDTH - x, GRID_HEIGHT - y)
+        edge_score = edge_dist / config.edge_distance if edge_dist < config.edge_distance else 1.0
+
+        # Оценка компактности
+        cells_in_radius = sum(1 for dx in range(-2, 3) for dy in range(-2, 3)
+                            if (x + dx, y + dy) in province['cells'])
+        compactness_score = cells_in_radius / 25  # Нормализуем по максимальному количеству клеток в радиусе 2
+
+        # Итоговая оценка
+        return (
+            neighbor_score * config.weights['neighbor_count'] +
+            distance_score * config.weights['center_distance'] +
+            direction_score * config.weights['direction'] +
+            edge_score * config.weights['edge_penalty'] +
+            compactness_score * config.weights['compactness']
+        )
+
+    def _connect_close_provinces(self, provinces: list, config: ProvinceGenerationConfig) -> None:
+        """
+        Соединяет близкие провинции мостами.
+        
+        Args:
+            provinces: Список провинций
+            config: Настройки генерации
+        """
+        for i, p1 in enumerate(provinces[:-1]):
+            p1_center = p1['center']
+            
+            for p2 in provinces[i+1:]:
+                p2_center = p2['center']
+                
+                # Вычисляем расстояние между центрами
+                dist = ((p1_center[0] - p2_center[0]) ** 2 + 
+                    (p1_center[1] - p2_center[1]) ** 2) ** 0.5
+                
+                if dist <= config.max_radius * 1.5:  # Соединяем только достаточно близкие провинции
+                    # Находим ближайшие точки провинций
+                    min_dist = float('inf')
+                    connection_points = None
+                    
+                    for c1 in p1['cells']:
+                        for c2 in p2['cells']:
+                            d = ((c1[0] - c2[0]) ** 2 + (c1[1] - c2[1]) ** 2) ** 0.5
+                            if d < min_dist:
+                                min_dist = d
+                                connection_points = (c1, c2)
+                    
+                    if connection_points and min_dist <= config.max_radius:
+                        # Соединяем провинции линией
+                        x1, y1 = connection_points[0]
+                        x2, y2 = connection_points[1]
+                        
+                        # Используем алгоритм Брезенхэма для рисования линии
+                        dx = abs(x2 - x1)
+                        dy = abs(y2 - y1)
+                        sx = 1 if x1 < x2 else -1
+                        sy = 1 if y1 < y2 else -1
+                        err = dx - dy
+                        
+                        x, y = x1, y1
+                        while True:
+                            self.grid[y, x] = 1
+                            if x == x2 and y == y2:
+                                break
+                            e2 = 2 * err
+                            if e2 > -dy:
+                                err -= dy
+                                x += sx
+                            if e2 < dx:
+                                err += dx
+                                y += sy   
+
     def _get_growth_candidates(self, province: dict, config: ProvinceGenerationConfig) -> set:
         """Находит возможные клетки для роста провинции."""
         candidates = set()
