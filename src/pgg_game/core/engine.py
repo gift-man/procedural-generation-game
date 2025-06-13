@@ -2,11 +2,10 @@
 import pygame
 import sys
 from typing import Optional, Dict
-from ..world.map_generator import MapGenerator
+
 from ..world.game_world import GameWorld
 from ..systems.event_system import EventSystem
 from ..systems.map_system import MapSystem
-from ..systems.ui_system import UISystem
 from ..core.game_types import GameState
 from ..config import (
     SCREEN_WIDTH,
@@ -37,7 +36,6 @@ class Engine:
             self.event_system = EventSystem()
             self.world = GameWorld()
             self.map_system = MapSystem()
-            self.ui_system = UISystem(self.screen, self.event_system)
             
             # Состояние игры
             self.state = GameState.MENU
@@ -52,11 +50,7 @@ class Engine:
             
             # Подписываемся на события
             self.event_system.subscribe('start_game', self._handle_start_game)
-            self.event_system.subscribe('open_settings', self._handle_open_settings)
             self.event_system.subscribe('quit_game', self._handle_quit_game)
-            
-            # Инициализируем генератор карты
-            self.map_generator = MapGenerator()
             
         except Exception as e:
             print(f"Ошибка при инициализации движка: {e}")
@@ -87,19 +81,7 @@ class Engine:
         finally:
             self.cleanup()
 
-    def initialize_map(self) -> None:
-        """Инициализация карты."""
-        try:
-            self.map_generator = MapGenerator(
-                width=SCREEN_WIDTH,
-                height=SCREEN_HEIGHT
-            )
-            success = self.map_generator.generate()
-            if not success:
-                raise RuntimeError("Не удалось сгенерировать карту")
-        except Exception as e:
-            print(f"Ошибка при генерации карты: {str(e)}")
-            raise    
+
 
     def _handle_events(self) -> None:
         """Обработка событий."""
@@ -125,9 +107,7 @@ class Engine:
         # Сбрасываем генерацию карты при новой игре
         self.map_system.map_generated = False
         
-    def _handle_open_settings(self, _: Dict) -> None:
-        """Обработчик открытия настроек."""
-        pass  # TODO: Реализовать окно настроек
+
     
     def _handle_quit_game(self, _: Dict) -> None:
         """Обработчик выхода из игры."""
@@ -154,25 +134,21 @@ class Engine:
             )
     
     def _render(self) -> None:
-            """Отрисовка игры."""
-            # Очищаем экран
-            self.screen.fill(self.background_color)
-            
-            if self.state == GameState.GAME:
-                # Отрисовываем карту только в игровом состоянии
-                self.map_system.render(self.world)
-                self.screen.blit(self.map_system.get_surface(), (0, 0))
-            
-            # Отрисовываем UI поверх всего
-            self.ui_system.render(self.world, self.state)
-            
-            # Отображаем FPS если включен режим отладки
-            if DEBUG['show_fps'] and self.fps_counter:
-                self.screen.blit(self.fps_counter, (10, 10))
+        """Отрисовка игры."""
+        # Очищаем экран
+        self.screen.fill(self.background_color)
+        
+        if self.state == GameState.GAME:
+            # Отрисовываем карту
+            self.map_system.render()
+            self.screen.blit(self.map_system.get_surface(), (0, 0))
+        
+        # Отображаем FPS если включен режим отладки
+        if DEBUG['show_fps'] and self.fps_counter:
+            self.screen.blit(self.fps_counter, (10, 10))
 
     
     def cleanup(self) -> None:
         """Освобождение ресурсов."""
-        self.ui_system.cleanup()
         pygame.quit()
         sys.exit()
