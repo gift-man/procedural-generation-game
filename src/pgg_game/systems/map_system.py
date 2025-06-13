@@ -25,8 +25,8 @@ class MapSystem:
     def __init__(self):
         """Инициализация системы карты."""
         self.grid = np.zeros((GRID_HEIGHT, GRID_WIDTH), dtype=np.int32)
-        self.provinces = {}  # Словарь провинций
-        self.cell_to_province = {}  # Маппинг клеток к провинциям
+        self.provinces = {}  
+        self.cell_to_province = {}
         self.world = None
         self.map_generated = False
         
@@ -55,12 +55,11 @@ class MapSystem:
             for attempt in range(5):
                 print(f"Попытка генерации {attempt + 1}")
                 
-                if self._generate_base_terrain():
-                    if self._generate_provinces():
-                        if self._create_province_entities(world):
-                            self.map_generated = True
-                            print("Карта успешно сгенерирована")
-                            return
+                if self._generate_from_provinces():
+                    if self._create_province_entities(world):
+                        self.map_generated = True
+                        print("Карта успешно сгенерирована")
+                        return
                 
                 print(f"Попытка {attempt + 1} не удалась")
                 
@@ -69,40 +68,7 @@ class MapSystem:
             print(f"Ошибка при генерации карты: {e}")
             raise
 
-    def _generate_base_terrain(self) -> bool:
-        """Генерирует базовую форму карты."""
-        # Очищаем сетку
-        self.grid.fill(0)
-        
-        # Создаем круглый остров
-        center_x = GRID_WIDTH // 2
-        center_y = GRID_HEIGHT // 2
-        radius = min(GRID_WIDTH, GRID_HEIGHT) // 4
-        
-        for y in range(GRID_HEIGHT):
-            for x in range(GRID_WIDTH):
-                dx = x - center_x
-                dy = y - center_y
-                distance = math.sqrt(dx * dx + dy * dy)
-                if distance <= radius:
-                    self.grid[y, x] = 1
-        
-        # Сглаживаем границы
-        for _ in range(2):
-            new_grid = self.grid.copy()
-            for y in range(1, GRID_HEIGHT-1):
-                for x in range(1, GRID_WIDTH-1):
-                    neighbors = np.sum(self.grid[y-1:y+2, x-1:x+2])
-                    if neighbors >= 5:
-                        new_grid[y, x] = 1
-                    elif neighbors <= 3:
-                        new_grid[y, x] = 0
-            self.grid = new_grid
-        
-        # Проверяем размер острова
-        land_cells = np.sum(self.grid)
-        min_required = self.province_manager.config.min_provinces * self.province_manager.config.min_size * 2
-        return land_cells >= min_required
+
 
     def _generate_provinces(self) -> bool:
         """Генерирует провинции на карте."""
