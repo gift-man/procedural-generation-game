@@ -1,8 +1,6 @@
 """Компонент провинции."""
-import random
 from typing import Set, List, Tuple, Dict, Optional
 from dataclasses import dataclass, field
-from ..world.generators.province_settings import ProvinceGenerationConfig
 
 @dataclass
 class Province:
@@ -20,9 +18,9 @@ class Province:
         self.id = id
         self.center_x = center_x
         self.center_y = center_y
-        self.cells = []  # Список клеток, принадлежащих провинции
-        self.border_cells = []  # Список граничных клеток
-        self.neighbors = set()  # Множество соседних провинций
+        self.cells: Set[Tuple[int, int]] = set()  # Множество клеток провинции
+        self.border_cells: Set[Tuple[int, int]] = set()  # Множество граничных клеток
+        self.neighbors: Set[int] = set()  # Множество соседних провинций
         
         # Случайный цвет для провинции (исключая слишком темные и светлые оттенки)
         import random
@@ -31,52 +29,27 @@ class Province:
             random.randint(50, 200),
             random.randint(50, 200)
         )
-
-@dataclass
-class ProvinceData:
-    """Класс для хранения данных о провинции."""
-    cells: Set[Tuple[int, int]] = field(default_factory=set)  # Клетки провинции
-    neighbors: Set[int] = field(default_factory=set)          # ID соседних провинций
-    border_cells: Set[Tuple[int, int]] = field(default_factory=set)  # Граничные клетки
-    target_size: Optional[int] = None  # Целевой размер провинции
-    
-    # Метрики для анализа качества
-    center: Optional[Tuple[int, int]] = None  # Центр провинции
-    compactness: float = 0.0  # Показатель компактности формы
-    border_length: int = 0    # Длина границы провинции
-    
-    def __iter__(self):
-        return iter(self.cells)
-    
-    def update_metrics(self) -> None:
-        """Обновляет метрики провинции."""
-        if not self.cells:
-            return
-            
-        # Вычисляем центр
-        x_sum = sum(x for x, _ in self.cells)
-        y_sum = sum(y for _, y in self.cells)
-        self.center = (x_sum // len(self.cells), y_sum // len(self.cells))
         
-        # Вычисляем компактность
-        max_distance = 0
-        for cell in self.cells:
-            dx = cell[0] - self.center[0]
-            dy = cell[1] - self.center[1]
-            distance = dx * dx + dy * dy
-            max_distance = max(max_distance, distance)
-        self.compactness = len(self.cells) / (max_distance + 1)
-        
-        # Вычисляем длину границы
-        self.border_length = sum(
-            1 for x, y in self.cells
-            for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]
-            if (x + dx, y + dy) not in self.cells
-        )
-        
-        # Обновляем граничные клетки
+    def update_border_cells(self) -> None:
+        """Обновляет список граничных клеток."""
         self.border_cells = {
             (x, y) for x, y in self.cells
             if any((x + dx, y + dy) not in self.cells
                   for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)])
         }
+    
+    def add_cell(self, cell: Tuple[int, int]) -> None:
+        """Добавляет клетку в провинцию."""
+        self.cells.add(cell)
+        self.update_border_cells()
+        
+    def remove_cell(self, cell: Tuple[int, int]) -> None:
+        """Удаляет клетку из провинции."""
+        self.cells.discard(cell)
+        self.update_border_cells()
+
+    def is_adjacent(self, cell: Tuple[int, int]) -> bool:
+        """Проверяет, прилегает ли клетка к провинции."""
+        x, y = cell
+        return any((x + dx, y + dy) in self.cells
+                  for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)])

@@ -3,7 +3,6 @@ import pygame
 from .widgets import Panel, Label, Button
 from ..components.player_info import PlayerInfoComponent
 from ..components.province_info import ProvinceInfoComponent
-from ..components.resource import ResourceComponent
 from ..world.game_world import GameWorld
 from ..config import COLORS, SCREEN_WIDTH, SCREEN_HEIGHT
 
@@ -57,7 +56,7 @@ class ProvincePanel(Panel):
                 pygame.Rect(10, 35, 300, 30),
                 "", fonts['normal']
             ),
-            'resources': Label(
+            'size': Label(
                 pygame.Rect(10, 65, 300, 30),
                 "", fonts['normal']
             )
@@ -67,18 +66,12 @@ class ProvincePanel(Panel):
             self.add_child(label)
     
     def update(self, province: ProvinceInfoComponent, 
-              resources: ResourceComponent,
               owner: Optional[PlayerInfoComponent] = None) -> None:
         """Обновляет информацию о провинции."""
         if province:
             self.labels['name'].text = f"Провинция: {province.name}"
             self.labels['owner'].text = f"Владелец: {owner.name if owner else 'Нейтральная'}"
-            
-            # Формируем строку с ресурсами
-            resources_text = ", ".join(
-                f"{k}: {v}" for k, v in resources.amounts.items()
-            )
-            self.labels['resources'].text = f"Ресурсы: {resources_text}"
+            self.labels['size'].text = f"Размер: {len(province.cells)} клеток"
 
 class GameUI:
     """Основной класс игрового интерфейса."""
@@ -100,7 +93,7 @@ class GameUI:
         self.panels = [self.top_panel, self.province_panel]
     
     def update(self, world: GameWorld, current_player_id: int,
-              selected_province_id: Optional[int] = None) -> None:
+            selected_province_id: Optional[int] = None) -> None:
         """Обновляет все элементы UI."""
         # Обновляем информацию о текущем игроке
         player = world.get_component(current_player_id, PlayerInfoComponent)
@@ -110,14 +103,13 @@ class GameUI:
         # Обновляем информацию о выбранной провинции
         if selected_province_id is not None:
             province = world.get_component(selected_province_id, ProvinceInfoComponent)
-            resources = world.get_component(selected_province_id, ResourceComponent)
             owner = None
-            if province and province.owner_id is not None:
-                owner = world.get_component(province.owner_id, PlayerInfoComponent)
+            if province and province.owner is not None:
+                owner = world.get_component(province.owner, PlayerInfoComponent)
             
-            if province and resources:
-                self.province_panel.update(province, resources, owner)
-    
+            if province:
+                self.province_panel.update(province, owner)
+        
     def draw(self) -> None:
         """Отрисовывает весь интерфейс."""
         for panel in self.panels:
