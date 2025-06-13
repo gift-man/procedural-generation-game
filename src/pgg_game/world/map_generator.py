@@ -299,6 +299,23 @@ class MapGenerator:
                     0 <= new_y < GRID_HEIGHT):
                     neighbors.append(self.terrain_grid[new_y][new_x])
         return neighbors
+    def check_area_suitable(self, x, y, radius=10):
+        """Проверяет, подходит ли область вокруг точки для размещения провинции"""
+        land_count = 0
+        total_points = 0
+        
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                check_x = x + dx
+                check_y = y + dy
+                if (0 <= check_x < self.width and 
+                    0 <= check_y < self.height):
+                    total_points += 1
+                    if self.height_map[check_y][check_x] > self.water_level:
+                        land_count += 1
+        
+        # Требуем, чтобы минимум 60% области было сушей
+        return (land_count / total_points) > 0.6 if total_points > 0 else False
     def _generate_provinces(self, land_cells: Set[Tuple[int, int]]) -> None:
         """Генерирует провинции на острове."""
         province_manager = ProvinceManager()
