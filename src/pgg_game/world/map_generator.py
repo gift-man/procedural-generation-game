@@ -5,7 +5,9 @@ import random
 import pygame
 from typing import List, Tuple, Dict, Set, Optional
 from dataclasses import dataclass
-
+import numpy
+import math
+from typing import List, Tuple, Optional
 from ..world.province_manager import ProvinceManager
 from .noise_generator import NoiseConfig, create_noise_generator
 from ..world.game_world import GameWorld
@@ -14,6 +16,7 @@ from ..components.renderable import RenderableComponent, ShapeType
 from ..components.province_info import ProvinceInfoComponent
 from ..components.resource import ResourceComponent, ResourceType
 from ..config import COLORS, TILE_SIZE, GRID_WIDTH, GRID_HEIGHT
+from ..components.province import Province  # Добавляем импорт класса Province
 
 @dataclass
 class TerrainConfig:
@@ -316,86 +319,137 @@ class MapGenerator:
         
         # Требуем, чтобы минимум 60% области было сушей
         return (land_count / total_points) > 0.6 if total_points > 0 else False
-    def _generate_provinces(self, land_cells: Set[Tuple[int, int]]) -> None:
-        """Генерирует провинции на острове."""
-        province_manager = ProvinceManager()
-        unassigned_cells = land_cells.copy()
+    def _create_land_mask(self) -> list:
+        """Создает маску суши."""
+        mask = []
+        for y in range(self.height):
+            row = []
+            for x in range(self.width):
+                row.append(1 if self._is_land(x, y) else 0)
+            mask.append(row)
+        return mask
 
-        # Создаем начальные провинции
-        while unassigned_cells and len(province_manager.provinces) < 20:  # MAX_PROVINCES
-            # Находим хорошую начальную точку
-            best_start = None
-            best_score = -1
-
-            for cell in unassigned_cells:
-                x, y = cell
-                neighbor_count = sum(1 for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]
-                                if (x + dx, y + dy) in unassigned_cells)
-                
-                if neighbor_count > best_score:
-                    best_score = neighbor_count
-                    best_start = cell
-
-            if not best_start:
-                break
-
-            # Создаем новую провинцию
-            province_id = province_manager.create_province()
-            if province_manager.add_cell_to_province(province_id, best_start):
-                unassigned_cells.remove(best_start)
-
-        # Расширяем провинции
-        while unassigned_cells:
-            grew = False
+    def _divide_land_into_regions(self, land_mask: list) -> list:
+        """
+        Разделяет сушу на регионы методом водораздела.
+        """
+        regions = []
+        width = len(land_mask[0])
+        height = len(land_mask)
+        
+        # Создаем сетку потенциальных центров
+        grid_size = min(width, height) // int(math.sqrt(self.num_provinces * 2))
+        centers = []
+        
+        for x in range(grid_size // 2, width, grid_size):
+            for y in range(grid_size // 2, height, grid_size):
+                if land_mask[y][x]:
+                    centers.append((x, y))
+        
+        if len(centers) < self.num_provinces:
+            return []
             
-            # Сортируем провинции по размеру (меньшие растут первыми)
-            provinces_by_size = sorted(
-                province_manager.provinces.keys(),
-                key=lambda pid: len(province_manager.provinces[pid].cells)
-            )
-
-            for province_id in provinces_by_size:
-                province = province_manager.provinces[province_id]
-                
-                # Находим доступные соседние клетки
-                candidates = set()
-                for cell in province.cells:
-                    x, y = cell
-                    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                        neighbor = (x + dx, y + dy)
-                        if neighbor in unassigned_cells:
-                            candidates.add(neighbor)
-
-                # Пробуем добавить лучшую клетку
-                best_cell = None
-                best_score = -1
-
-                for cell in candidates:
-                    x, y = cell
-                    score = sum(1 for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]
-                            if (x + dx, y + dy) in province.cells)
+        # Выбираем случайные центры из доступных
+        random.shuffle(centers)
+        selected_centers = centers[:self.num_provinces]
+        
+        # Создаем регионы методом ближайшего соседа
+        region_map = [[-1 for _ in range(width)] for _ in range(height)]
+        regions = [[] for _ in range(self.num_provinces)]
+        
+        # Распределяем точки по регионам
+        for y in range(height):
+            for x in range(width):
+                if land_mask[y][x]:
+                    # Находим ближайший центр
+                    min_dist = float('inf')
+                    closest_region = -1
                     
-                    if score > best_score:
-                        best_score = score
-                        best_cell = cell
+                    for i, (cx, cy) in enumerate(selected_centers):
+                        dist = math.sqrt((x - cx)**2 + (y - cy)**2)
+                        if dist < min_dist:
+                            min_dist = dist
+                            closest_region = i
+                    
+                    if closest_region != -1:
+                        region_map[y][x] = closest_region
+                        regions[closest_region].append((x, y))
+        
+        # Сглаживаем границы регионов
+        self._smooth_regions(region_map, land_mask)
+        
+        return regions
 
-                if best_cell and province_manager.add_cell_to_province(province_id, best_cell):
-                    unassigned_cells.remove(best_cell)
-                    grew = True
-
-            if not grew:
-                break
-
-        # Создаем сущности провинций
-        for province_id, province in province_manager.provinces.items():
-            entity_id = self.world.create_entity()
+    def _smooth_regions(self, region_map: list, land_mask: list, iterations: int = 2):
+        """Сглаживает границы регионов."""
+        width = len(region_map[0])
+        height = len(region_map)
+        
+        for _ in range(iterations):
+            new_map = [row[:] for row in region_map]
             
-            # Добавляем компоненты
-            self.world.add_component(entity_id, ProvinceInfoComponent(f"Province {province_id}"))
+            for y in range(1, height - 1):
+                for x in range(1, width - 1):
+                    if land_mask[y][x]:
+                        # Подсчитываем преобладающий регион среди соседей
+                        neighbors = {}
+                        for dy in [-1, 0, 1]:
+                            for dx in [-1, 0, 1]:
+                                if dx == 0 and dy == 0:
+                                    continue
+                                neighbor_region = region_map[y + dy][x + dx]
+                                if neighbor_region != -1:
+                                    neighbors[neighbor_region] = neighbors.get(neighbor_region, 0) + 1
+                        
+                        if neighbors:
+                            most_common = max(neighbors.items(), key=lambda x: x[1])[0]
+                            new_map[y][x] = most_common
             
-            # Добавляем ресурсы провинции
-            resource_component = ResourceComponent()
-            self.world.add_component(entity_id, resource_component)
+            region_map = new_map
+
+    def _find_region_center(self, region: list) -> tuple:
+        """Находит центр масс региона."""
+        if not region:
+            return (0, 0)
+            
+        sum_x = sum(x for x, y in region)
+        sum_y = sum(y for x, y in region)
+        center_x = sum_x // len(region)
+        center_y = sum_y // len(region)
+        
+        # Находим ближайшую точку суши к центру масс
+        best_point = region[0]
+        min_dist = float('inf')
+        
+        for x, y in region:
+            dist = math.sqrt((x - center_x)**2 + (y - center_y)**2)
+            if dist < min_dist and self._is_land(x, y):
+                min_dist = dist
+                best_point = (x, y)
+        
+        return best_point    
+    def _generate_provinces(self) -> bool:
+        """
+        Новый подход к генерации провинций, основанный на разделении территории.
+        """
+        # Создаем маску суши
+        land_mask = self._create_land_mask()
+        if not land_mask:
+            return False
+            
+        # Разделяем сушу на регионы примерно равного размера
+        regions = self._divide_land_into_regions(land_mask)
+        if len(regions) < self.num_provinces:
+            return False
+            
+        # Создаем провинции из регионов
+        for i in range(self.num_provinces):
+            if i < len(regions):
+                center_x, center_y = self._find_region_center(regions[i])
+                province = Province(i, center_x, center_y)
+                self.provinces.append(province)
+        
+        return len(self.provinces) == self.num_provinces
 
     def get_province_at(self, screen_x: int, screen_y: int) -> int:
         """

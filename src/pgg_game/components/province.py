@@ -6,10 +6,31 @@ from ..world.generators.province_settings import ProvinceGenerationConfig
 
 @dataclass
 class Province:
-    """Базовый класс провинции."""
-    id: int
-    cells: Set[Tuple[int, int]]
-    province_data: Optional['ProvinceData'] = None
+    """Класс, представляющий провинцию на карте."""
+    
+    def __init__(self, id: int, center_x: int, center_y: int):
+        """
+        Инициализация провинции.
+        
+        Args:
+            id (int): Уникальный идентификатор провинции
+            center_x (int): X координата центра провинции
+            center_y (int): Y координата центра провинции
+        """
+        self.id = id
+        self.center_x = center_x
+        self.center_y = center_y
+        self.cells = []  # Список клеток, принадлежащих провинции
+        self.border_cells = []  # Список граничных клеток
+        self.neighbors = set()  # Множество соседних провинций
+        
+        # Случайный цвет для провинции (исключая слишком темные и светлые оттенки)
+        import random
+        self.color = (
+            random.randint(50, 200),
+            random.randint(50, 200),
+            random.randint(50, 200)
+        )
 
 @dataclass
 class ProvinceData:

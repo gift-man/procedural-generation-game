@@ -130,3 +130,10 @@ DEBUG = {
     'show_collisions': False,
     'log_level': 'INFO'
 }
+# Параметры генерации провинций
+PROVINCE_GENERATION = {
+    'MIN_PROVINCE_SIZE': 100,        # Минимальный размер провинции в пикселях
+    'MIN_DISTANCE': 30,              # Минимальное расстояние между центрами провинций
+    'BORDER_SMOOTHING': 2,           # Уровень сглаживания границ
+    'MAX_GENERATION_ATTEMPTS': 5     # Максимальное количество попыток генерации
+}

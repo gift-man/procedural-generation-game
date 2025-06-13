@@ -2,7 +2,7 @@
 import pygame
 import sys
 from typing import Optional, Dict
-
+from ..world.map_generator import MapGenerator
 from ..world.game_world import GameWorld
 from ..systems.event_system import EventSystem
 from ..systems.map_system import MapSystem
@@ -77,7 +77,21 @@ class Engine:
             raise
         finally:
             self.cleanup()
-    
+
+    def initialize_map(self) -> None:
+        """Инициализация карты."""
+        try:
+            self.map_generator = MapGenerator(
+                width=SCREEN_WIDTH,
+                height=SCREEN_HEIGHT
+            )
+            success = self.map_generator.generate()
+            if not success:
+                raise RuntimeError("Не удалось сгенерировать карту")
+        except Exception as e:
+            print(f"Ошибка при генерации карты: {str(e)}")
+            raise    
+
     def _handle_events(self) -> None:
         """Обработка событий."""
         for pygame_event in pygame.event.get():
