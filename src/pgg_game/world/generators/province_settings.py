@@ -4,47 +4,33 @@ from typing import Dict
 
 @dataclass
 class ProvinceGenerationConfig:
-    """Конфигурация для генерации провинций."""
-    # Базовые ограничения - будут заполнены из анализа острова
-    min_province_size: int = 4
-    max_province_size: int = 8
-    min_province_count: int = 3
-    max_province_count: int = 15
     """Настройки генерации провинций."""
+    # Базовые параметры
     min_size: int = 4          # Минимальный размер провинции
     max_size: int = 8          # Максимальный размер провинции
     min_provinces: int = 8     # Минимальное количество провинций
     max_provinces: int = 15    # Максимальное количество провинций
-    spacing: int = 2           # Расстояние между провинциями
-    growth_steps: int = 3      # Количество шагов роста провинции
+    
+    # Параметры расположения
+    spacing: int = 2           # Минимальное расстояние между провинциями
+    initial_radius: int = 4    # Начальный радиус размещения провинций (в клетках)
+    max_radius: int = 10      # Максимальный радиус для роста
+    
+    # Параметры роста
+    growth_steps: int = 5      # Количество шагов роста провинции
+    growth_chance: float = 0.8 # Шанс роста на каждом шаге
+    min_neighbors: int = 1     # Минимальное число соседей для роста
+    max_neighbors: int = 3     # Максимальное число соседей для роста
+    
+    # Параметры генерации
     border_smoothing: int = 2  # Количество проходов сглаживания
-    # Настройки генерации
-    max_generation_attempts: int = 5  # Уменьшаем количество попыток для более быстрой обратной связи
-    max_province_attempts: int = 50   # Уменьшаем для оптимизации
-    min_total_coverage: float = 1.0   # Требуем полное покрытие
-    check_plus_intersection: bool = True
-    allow_uneven_sizes: bool = True   # Разрешаем неравномерные размеры
+    max_attempts: int = 50     # Максимальное число попыток на провинцию
+    edge_distance: int = 2     # Минимальное расстояние до края карты
     
-   # Вероятности размеров провинций
-    size_probabilities: Dict[int, float] = field(default_factory=lambda: {
-        4: 0.2,
-        5: 0.3,
-        6: 0.3,
-        7: 0.15,
-        8: 0.05
-    })
-    
-    # Веса для выбора следующей клетки
+    # Веса для оценки клеток при росте
     weights: Dict[str, float] = field(default_factory=lambda: {
-        'neighbor_count': 0.7,    # Увеличиваем важность соседей
-        'compactness': 0.2,       # Уменьшаем важность компактности
-        'center_distance': 0.1    # Уменьшаем влияние расстояния
-    })
-    
-    # Параметры качества генерации
-    quality_thresholds: Dict[str, float] = field(default_factory=lambda: {
-        'min_compactness': 0.6,
-        'max_border_ratio': 0.4,
-        'min_province_ratio': 0.9,
-        'max_size_variance': 0.2
+        'neighbor_count': 0.4,    # Вес количества соседей
+        'center_distance': 0.3,   # Вес расстояния до центра
+        'edge_penalty': 0.2,      # Штраф за близость к краю
+        'direction': 0.1          # Вес сохранения направления роста
     })
